@@ -1,0 +1,20 @@
+# ARC - Autonomous Research Collective
+# Core dependencies (excluding model weights and vLLM)
+
+# Control Plane
+fastapi==0.121.2
+uvicorn==0.38.0
+pydantic==2.12.4
+python-multipart==0.0.20
+aiofiles==25.1.0
+
+# Dashboard
+streamlit==1.51.0
+plotly==6.4.0
+pandas==2.3.3
+
+# LLM Integration
+requests==2.32.5
+
+# Training (minimal PyTorch for stubs)
+torch>=2.1.0
