@@ -16,10 +16,12 @@ from schemas import (
     Directive, HistorySummary, Constraints, SystemState,
     OperatingMode, ActiveExperiment
 )
+from tool_governance import get_tool_governance, ToolGovernance, ToolValidationError, ToolExecutionError
 
-# Initialize settings and memory handler
+# Initialize settings, memory handler, and tool governance
 settings = get_settings()
 memory = get_memory_handler(settings)
+governance = get_tool_governance(settings, memory)
 
 # Configure logging with config-driven paths
 logging.basicConfig(
