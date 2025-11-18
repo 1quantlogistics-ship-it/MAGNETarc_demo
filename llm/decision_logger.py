@@ -11,6 +11,11 @@ Provides JSONL-based logging for complete transparency:
 - Confidence score tracking
 
 All logs are append-only JSONL format for easy analysis and replay.
+
+Integrated with v1.1.0 infrastructure:
+- Config-driven log paths
+- Compatible with ToolGovernance
+- Schema-validated logging
 """
 
 import json
@@ -21,6 +26,12 @@ from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, asdict
 from enum import Enum
 
+# Import v1.1.0 config system
+try:
+    from config import get_settings
+    HAS_CONFIG = True
+except ImportError:
+    HAS_CONFIG = False
 
 logger = logging.getLogger(__name__)
 
@@ -121,13 +132,22 @@ class DecisionLogger:
     - Query and analysis utilities
     """
 
-    def __init__(self, log_dir: str = "/workspace/arc/memory/logs"):
+    def __init__(self, log_dir: Optional[str] = None):
         """
         Initialize decision logger.
 
         Args:
-            log_dir: Directory for log files
+            log_dir: Directory for log files (None = use config)
         """
+        # Use config-driven path if available
+        if log_dir is None and HAS_CONFIG:
+            settings = get_settings()
+            log_dir = str(settings.logs_dir / "decisions")
+
+        # Fallback to default if config not available
+        if log_dir is None:
+            log_dir = "/workspace/arc/memory/logs"
+
         self.log_dir = Path(log_dir)
         self.log_dir.mkdir(parents=True, exist_ok=True)
 
@@ -138,7 +158,7 @@ class DecisionLogger:
         self.supervisor_log = self.log_dir / "supervisor.jsonl"
         self.cycle_log = self.log_dir / "cycles.jsonl"
 
-        logger.info(f"DecisionLogger initialized (log_dir={log_dir})")
+        logger.info(f"DecisionLogger initialized (log_dir={log_dir}, config_driven={HAS_CONFIG})")
 
     def log_vote(
         self,
