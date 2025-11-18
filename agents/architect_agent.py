@@ -6,9 +6,16 @@ The Architect generates hypothesis-driven experiment proposals
 based on Director's strategy and Historian's insights.
 """
 
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from agents.base import BaseAgent, AgentCapability
 from llm.router import LLMRouter
+
+# Optional world-model integration
+try:
+    from agents.world_model import get_world_model
+    WORLD_MODEL_AVAILABLE = True
+except ImportError:
+    WORLD_MODEL_AVAILABLE = False
 
 
 class ArchitectAgent(BaseAgent):
@@ -28,7 +35,8 @@ class ArchitectAgent(BaseAgent):
         model: str = "deepseek-r1",
         llm_router: LLMRouter = None,
         voting_weight: float = 1.5,
-        memory_path: str = "/workspace/arc/memory"
+        memory_path: str = "/workspace/arc/memory",
+        use_world_model: bool = True
     ):
         """Initialize Architect agent."""
         super().__init__(
@@ -42,6 +50,18 @@ class ArchitectAgent(BaseAgent):
             memory_path=memory_path
         )
         self.llm_router = llm_router or LLMRouter(offline_mode=True)
+
+        # Initialize world-model for predictive intelligence
+        self.world_model = None
+        if use_world_model and WORLD_MODEL_AVAILABLE:
+            try:
+                self.world_model = get_world_model(
+                    memory_path=memory_path,
+                    target_metric="auc",
+                    auto_train=True
+                )
+            except Exception as e:
+                print(f"Warning: Could not initialize world-model: {e}")
 
     def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -147,3 +167,95 @@ Return ONLY a valid JSON object:
     }}
   ]
 }}"""
+
+    def filter_proposals_with_predictions(
+        self,
+        proposals: List[Dict[str, Any]],
+        min_predicted_metric: float = 0.6
+    ) -> List[Dict[str, Any]]:
+        """
+        Filter proposals using world-model predictions.
+
+        Args:
+            proposals: List of proposals to filter
+            min_predicted_metric: Minimum predicted metric threshold
+
+        Returns:
+            Filtered proposals with prediction info added
+        """
+        if not self.world_model or not self.world_model.is_trained:
+            # No filtering if world-model unavailable
+            return proposals
+
+        filtered = []
+        for proposal in proposals:
+            # Get config changes
+            config_changes = proposal.get("config_changes", {})
+
+            # Predict outcome
+            prediction = self.world_model.predict(config_changes)
+
+            # Add prediction info
+            proposal["world_model_prediction"] = {
+                "predicted_auc": prediction.mean,
+                "uncertainty": prediction.std,
+                "confidence": prediction.confidence
+            }
+
+            # Filter based on threshold
+            if prediction.mean >= min_predicted_metric:
+                filtered.append(proposal)
+            else:
+                # Log filtered proposal
+                print(f"Filtered {proposal.get('experiment_id')}: "
+                      f"predicted AUC {prediction.mean:.3f} < {min_predicted_metric:.3f}")
+
+        return filtered
+
+    def rank_proposals_by_acquisition(
+        self,
+        proposals: List[Dict[str, Any]],
+        acquisition: str = "ucb"
+    ) -> List[Dict[str, Any]]:
+        """
+        Rank proposals by acquisition function value.
+
+        Args:
+            proposals: List of proposals
+            acquisition: Acquisition function (ucb, ei, poi)
+
+        Returns:
+            Proposals sorted by acquisition value (best first)
+        """
+        if not self.world_model or not self.world_model.is_trained:
+            return proposals
+
+        # Extract configs
+        configs = [p.get("config_changes", {}) for p in proposals]
+
+        # Get acquisition values
+        suggestions = self.world_model.suggest_next_experiments(
+            candidate_configs=configs,
+            n_suggestions=len(proposals),
+            acquisition=acquisition
+        )
+
+        # Sort proposals by acquisition value
+        config_to_value = {
+            str(config): value
+            for config, value in suggestions
+        }
+
+        ranked = sorted(
+            proposals,
+            key=lambda p: config_to_value.get(str(p.get("config_changes", {})), 0),
+            reverse=True
+        )
+
+        # Add acquisition scores
+        for i, proposal in enumerate(ranked):
+            config_str = str(proposal.get("config_changes", {}))
+            proposal["acquisition_score"] = config_to_value.get(config_str, 0.0)
+            proposal["acquisition_rank"] = i + 1
+
+        return ranked

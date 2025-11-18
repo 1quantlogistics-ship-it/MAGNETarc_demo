@@ -6,9 +6,16 @@ The Director sets research strategy, allocates budgets, and determines
 when to explore vs exploit.
 """
 
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
 from agents.base import BaseAgent, AgentCapability
 from llm.router import LLMRouter
+
+# Optional Historian integration for adaptive strategy
+try:
+    from agents.historian_agent import HistorianAgent
+    HISTORIAN_AVAILABLE = True
+except ImportError:
+    HISTORIAN_AVAILABLE = False
 
 
 class DirectorAgent(BaseAgent):
@@ -149,3 +156,167 @@ Return ONLY a valid JSON object with this structure:
   "encouraged_axes": ["param3", "param4"],
   "notes": "strategic reasoning"
 }}"""
+
+    def compute_adaptive_strategy(
+        self,
+        historian: Optional['HistorianAgent'] = None,
+        stagnation_threshold: float = 0.01,
+        regression_threshold: float = -0.05,
+        window: int = 5
+    ) -> Dict[str, Any]:
+        """
+        Compute strategy based on algorithmic analysis of performance trends.
+
+        This replaces pure LLM-based strategy with data-driven decision-making.
+
+        Args:
+            historian: Historian agent with training history access
+            stagnation_threshold: Min improvement required to avoid stagnation mode
+            regression_threshold: Performance drop that triggers recovery
+            window: Number of recent experiments to analyze
+
+        Returns:
+            Strategic directive with mode and reasoning
+        """
+        # Load history
+        history = self.read_memory("history_summary.json") or {}
+        training_history = self.read_memory("training_history.json") or {}
+
+        # Extract metrics
+        total_cycles = history.get("total_cycles", 0)
+        best_metrics = history.get("best_metrics", {})
+        recent_experiments = history.get("recent_experiments", [])
+
+        # Default strategy (no history)
+        if total_cycles < 3 or not recent_experiments:
+            return {
+                "mode": "explore",
+                "objective": "Initial exploration - building knowledge base",
+                "novelty_budget": {"exploit": 1, "explore": 2, "wildcat": 0},
+                "reasoning": "Insufficient history for adaptive strategy",
+                "strategy_type": "default"
+            }
+
+        # Analyze performance trend
+        if historian and HISTORIAN_AVAILABLE:
+            trend = historian.get_performance_trend(metric="auc", window=window)
+            stagnated = historian.detect_stagnation(
+                metric="auc",
+                threshold=stagnation_threshold,
+                window=window
+            )
+        else:
+            # Manual trend analysis
+            trend = []
+            for exp in recent_experiments[-window:]:
+                metrics = exp.get("metrics", {})
+                if "auc" in metrics:
+                    trend.append(metrics["auc"])
+
+            stagnated = self._detect_stagnation_simple(trend, stagnation_threshold)
+
+        # Compute improvement
+        improvement = 0.0
+        if len(trend) >= 2:
+            improvement = trend[-1] - trend[0]
+
+        # Detect regression
+        regressed = improvement < regression_threshold
+
+        # Choose strategy based on analysis
+        if regressed:
+            # Performance dropped significantly → RECOVER
+            return {
+                "mode": "recover",
+                "objective": "Recover from performance regression",
+                "novelty_budget": {"exploit": 3, "explore": 0, "wildcat": 0},
+                "focus_areas": ["proven_configs", "baseline_restoration"],
+                "reasoning": f"Performance regressed by {improvement:.3f} (threshold: {regression_threshold})",
+                "strategy_type": "algorithmic_recovery",
+                "metrics": {
+                    "improvement": improvement,
+                    "trend": trend,
+                    "regressed": True
+                }
+            }
+
+        elif stagnated:
+            # No improvement for several cycles → EXPLORE
+            return {
+                "mode": "explore",
+                "objective": "Break stagnation with novel approaches",
+                "novelty_budget": {"exploit": 0, "explore": 2, "wildcat": 1},
+                "focus_areas": ["unexplored_regions", "alternative_architectures"],
+                "reasoning": f"Stagnation detected: improvement {improvement:.3f} < {stagnation_threshold}",
+                "strategy_type": "algorithmic_exploration",
+                "metrics": {
+                    "improvement": improvement,
+                    "trend": trend,
+                    "stagnated": True
+                }
+            }
+
+        elif improvement > 0.05:
+            # Strong recent improvement → EXPLOIT
+            return {
+                "mode": "exploit",
+                "objective": "Exploit recent breakthroughs",
+                "novelty_budget": {"exploit": 3, "explore": 0, "wildcat": 0},
+                "focus_areas": ["successful_patterns", "fine_tuning"],
+                "reasoning": f"Strong improvement {improvement:.3f} - double down on success",
+                "strategy_type": "algorithmic_exploitation",
+                "metrics": {
+                    "improvement": improvement,
+                    "trend": trend,
+                    "strong_progress": True
+                }
+            }
+
+        else:
+            # Moderate progress → BALANCED EXPLORE
+            return {
+                "mode": "explore",
+                "objective": "Balanced exploration with moderate progress",
+                "novelty_budget": {"exploit": 1, "explore": 2, "wildcat": 0},
+                "focus_areas": ["incremental_improvements", "nearby_configs"],
+                "reasoning": f"Moderate progress {improvement:.3f} - continue exploring",
+                "strategy_type": "algorithmic_balanced",
+                "metrics": {
+                    "improvement": improvement,
+                    "trend": trend
+                }
+            }
+
+    def _detect_stagnation_simple(
+        self,
+        trend: List[float],
+        threshold: float
+    ) -> bool:
+        """
+        Simple stagnation detection without Historian.
+
+        Args:
+            trend: List of recent metric values
+            threshold: Min improvement required
+
+        Returns:
+            True if stagnated
+        """
+        if len(trend) < 2:
+            return False
+
+        # Check if improvement from first to last is below threshold
+        improvement = trend[-1] - trend[0]
+        return improvement < threshold
+
+    def get_strategy_summary(self) -> Dict[str, Any]:
+        """Get current strategy summary."""
+        directive = self.read_memory("directive.json") or {}
+
+        return {
+            "mode": directive.get("mode", "unknown"),
+            "objective": directive.get("objective", ""),
+            "novelty_budget": directive.get("novelty_budget", {}),
+            "strategy_type": directive.get("strategy_type", "llm_based"),
+            "metrics": directive.get("metrics", {})
+        }
