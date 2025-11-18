@@ -693,6 +693,199 @@ async def preprocess_dataset_endpoint(req: PreprocessDatasetRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ============================================================================
+# Dataset Management Endpoints
+# ============================================================================
+
+class DatasetUnpackRequest(BaseModel):
+    archive_path: str
+    dataset_name: str
+    normalize: bool = True
+
+
+class DatasetRegisterRequest(BaseModel):
+    dataset_dir: str
+    dataset_name: str
+    push_to_dvc: bool = True
+
+
+class DatasetPreprocessRequest(BaseModel):
+    dataset_name: str
+    input_path: str
+    output_path: str
+
+
+@app.post('/datasets/unpack')
+async def unpack_dataset_endpoint(req: DatasetUnpackRequest):
+    """
+    Unpack and normalize dataset archive.
+
+    Args:
+        req: Dataset unpacking request
+
+    Returns:
+        Unpacking and normalization results
+    """
+    try:
+        from tools.acuvue_tools import unpack_dataset_archive
+
+        logger.info(f'Unpacking dataset: {req.dataset_name}')
+
+        result = unpack_dataset_archive(
+            archive_path=req.archive_path,
+            dataset_name=req.dataset_name,
+            output_dir=str(settings.home / "workspace" / "data"),
+            normalize=req.normalize
+        )
+
+        logger.info(f'Dataset unpacked: {req.dataset_name}')
+
+        return result
+
+    except Exception as e:
+        logger.error(f'Dataset unpacking failed: {e}')
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post('/datasets/register')
+async def register_dataset_endpoint(req: DatasetRegisterRequest):
+    """
+    Register dataset with DVC for version control.
+
+    Args:
+        req: Dataset registration request
+
+    Returns:
+        Registration results with SHA256 hash
+    """
+    try:
+        from tools.dvc_tools import register_dataset_with_dvc
+
+        logger.info(f'Registering dataset with DVC: {req.dataset_name}')
+
+        result = register_dataset_with_dvc(
+            dataset_dir=req.dataset_dir,
+            dataset_name=req.dataset_name,
+            push=req.push_to_dvc
+        )
+
+        logger.info(f'Dataset registered: {req.dataset_name}')
+
+        return result
+
+    except Exception as e:
+        logger.error(f'Dataset registration failed: {e}')
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post('/datasets/preprocess')
+async def preprocess_dataset_full(req: DatasetPreprocessRequest):
+    """
+    Run full AcuVue preprocessing pipeline on dataset.
+
+    Args:
+        req: Preprocessing request
+
+    Returns:
+        Preprocessing results
+    """
+    try:
+        from tools.acuvue_tools import run_preprocessing
+
+        logger.info(f'Running AcuVue preprocessing: {req.dataset_name}')
+
+        result = run_preprocessing(
+            dataset_name=req.dataset_name,
+            input_path=req.input_path,
+            output_path=req.output_path
+        )
+
+        logger.info(f'Preprocessing complete: {req.dataset_name}')
+
+        return result
+
+    except Exception as e:
+        logger.error(f'Preprocessing failed: {e}')
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get('/datasets/list')
+async def list_datasets():
+    """
+    List all registered datasets.
+
+    Returns:
+        List of registered datasets with metadata
+    """
+    try:
+        from tools.dvc_tools import list_registered_datasets
+
+        datasets = list_registered_datasets()
+
+        return {
+            "datasets": datasets,
+            "count": len(datasets)
+        }
+
+    except Exception as e:
+        logger.error(f'Failed to list datasets: {e}')
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get('/datasets/{dataset_name}/info')
+async def get_dataset_info(dataset_name: str):
+    """
+    Get information about specific dataset.
+
+    Args:
+        dataset_name: Dataset identifier
+
+    Returns:
+        Dataset metadata
+    """
+    try:
+        from tools.dvc_tools import get_dataset_info
+
+        info = get_dataset_info(dataset_name)
+
+        if info is None:
+            raise HTTPException(status_code=404, detail=f'Dataset not found: {dataset_name}')
+
+        return {
+            "dataset_name": dataset_name,
+            **info
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f'Failed to get dataset info: {e}')
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post('/datasets/{dataset_name}/validate')
+async def validate_dataset(dataset_name: str):
+    """
+    Validate dataset integrity by checking SHA256 hash.
+
+    Args:
+        dataset_name: Dataset to validate
+
+    Returns:
+        Validation results
+    """
+    try:
+        from tools.dvc_tools import validate_dataset_integrity
+
+        result = validate_dataset_integrity(dataset_name)
+
+        return result
+
+    except Exception as e:
+        logger.error(f'Dataset validation failed: {e}')
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 if __name__ == '__main__':
     # Ensure directories exist using config
     settings.ensure_directories()

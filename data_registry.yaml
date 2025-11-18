@@ -1,0 +1,23 @@
+# ARC Data Registry
+#
+# Tracks all datasets registered with DVC for version control and reproducibility.
+#
+# Format:
+# datasets:
+#   <dataset_name>:
+#     path: /path/to/dataset
+#     sha256: <hash>
+#     registered_at: <ISO timestamp>
+#     last_updated: <ISO timestamp>
+#     description: Optional description
+#     source: Optional source URL or reference
+
+datasets:
+  # Example entry (will be populated by tools/dvc_tools.py):
+  # rimone:
+  #   path: /Users/bengibson/Desktop/ARC/arc_clean/workspace/data/rimone
+  #   sha256: abc123...
+  #   registered_at: "2025-11-18T12:00:00Z"
+  #   last_updated: "2025-11-18T12:00:00Z"
+  #   description: "RIM-ONE dataset for glaucoma detection"
+  #   source: "https://github.com/miag-ull/rim-one-dl"
