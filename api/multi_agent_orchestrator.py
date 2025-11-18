@@ -46,6 +46,14 @@ from llm.health_monitor import get_health_monitor
 from config.loader import get_config_loader
 from llm.decision_logger import get_decision_logger, LogEventType
 
+# Import training executor for autonomous execution
+try:
+    from api.training_executor import get_training_executor, TrainingExecutionError, JobStatus
+    TRAINING_EXECUTOR_AVAILABLE = True
+except ImportError:
+    logger.warning("Training executor not available - experiments will not be executed")
+    TRAINING_EXECUTOR_AVAILABLE = False
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -116,6 +124,19 @@ class MultiAgentOrchestrator:
         # Initialize decision logger
         log_dir = str(self.memory_path / "logs")
         self.decision_logger = get_decision_logger(log_dir=log_dir)
+
+        # Initialize training executor (for autonomous operation)
+        self.training_executor = None
+        if TRAINING_EXECUTOR_AVAILABLE and not offline_mode:
+            try:
+                self.training_executor = get_training_executor(
+                    memory_path=str(self.memory_path),
+                    poll_interval=10,
+                    max_concurrent_jobs=3
+                )
+                logger.info("Training executor initialized - autonomous execution enabled")
+            except Exception as e:
+                logger.warning(f"Failed to initialize training executor: {e}")
 
         # Initialize agents
         self._initialize_agents()
@@ -604,20 +625,62 @@ class MultiAgentOrchestrator:
             "timestamp": datetime.now().isoformat()
         }
 
-    def _executor_preparation(self, cycle_id: int, approved_proposals: List[str]) -> Dict[str, Any]:
-        """Executor prepares approved experiments for execution."""
+    def _executor_preparation(
+        self,
+        cycle_id: int,
+        approved_proposals: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """
+        Executor prepares and submits approved experiments for execution.
+
+        Args:
+            cycle_id: Current cycle ID
+            approved_proposals: List of approved proposal dicts
+
+        Returns:
+            Dict with execution status and submitted jobs
+        """
         if not approved_proposals:
             return {"status": "no_approved_proposals", "executions": []}
 
         executor = self.registry.get_agent("executor_001")
 
-        # Executor would prepare training jobs here
-        # For now, just log what would be executed
-        return {
-            "status": "prepared",
-            "approved_count": len(approved_proposals),
-            "timestamp": datetime.now().isoformat()
-        }
+        # If training executor available, submit jobs
+        if self.training_executor:
+            try:
+                logger.info(f"Submitting {len(approved_proposals)} approved proposals for training")
+
+                submitted_jobs = self.training_executor.submit_batch(
+                    proposals=approved_proposals,
+                    requires_approval=False  # Already approved by multi-agent consensus
+                )
+
+                return {
+                    "status": "submitted",
+                    "approved_count": len(approved_proposals),
+                    "submitted_count": len(submitted_jobs),
+                    "job_ids": [job.experiment_id for job in submitted_jobs],
+                    "timestamp": datetime.now().isoformat()
+                }
+
+            except TrainingExecutionError as e:
+                logger.error(f"Failed to submit training jobs: {e}")
+                return {
+                    "status": "submission_failed",
+                    "error": str(e),
+                    "approved_count": len(approved_proposals),
+                    "submitted_count": 0,
+                    "timestamp": datetime.now().isoformat()
+                }
+        else:
+            # Offline mode or training executor not available
+            logger.info(f"Training executor not available - logging {len(approved_proposals)} approved proposals")
+            return {
+                "status": "prepared_offline",
+                "approved_count": len(approved_proposals),
+                "approved_experiments": [p.get("experiment_id") for p in approved_proposals],
+                "timestamp": datetime.now().isoformat()
+            }
 
     def _log_vote(self, cycle_id: int, proposal: Dict, vote_result: VoteResult):
         """Log voting result to decisions/voting_history.jsonl"""
@@ -686,6 +749,148 @@ class MultiAgentOrchestrator:
     def get_agent_status(self) -> Dict[str, Any]:
         """Get status of all agents."""
         return self.registry.get_health_report()
+
+    def wait_for_training_completion(
+        self,
+        experiment_ids: List[str],
+        timeout: Optional[int] = 3600
+    ) -> Dict[str, JobStatus]:
+        """
+        Wait for submitted training jobs to complete.
+
+        Args:
+            experiment_ids: List of experiment IDs to wait for
+            timeout: Maximum seconds to wait (default 1 hour)
+
+        Returns:
+            Dict mapping experiment_id to final JobStatus
+        """
+        if not self.training_executor:
+            logger.warning("Training executor not available - cannot wait for completion")
+            return {}
+
+        logger.info(f"Waiting for {len(experiment_ids)} training jobs to complete...")
+        completion_status = self.training_executor.wait_for_completion(
+            experiment_ids=experiment_ids,
+            timeout=timeout
+        )
+
+        completed_count = sum(1 for status in completion_status.values() if status == JobStatus.COMPLETED)
+        failed_count = sum(1 for status in completion_status.values() if status == JobStatus.FAILED)
+
+        logger.info(f"Training completion: {completed_count} succeeded, {failed_count} failed")
+
+        return completion_status
+
+    def collect_and_integrate_results(
+        self,
+        experiment_ids: List[str],
+        cycle_id: int
+    ) -> Dict[str, Any]:
+        """
+        Collect experiment results and feed them to Historian.
+
+        This is the key feedback loop for autonomous learning.
+
+        Args:
+            experiment_ids: List of completed experiment IDs
+            cycle_id: Current cycle ID
+
+        Returns:
+            Integration summary from Historian
+        """
+        if not self.training_executor:
+            logger.warning("Training executor not available - cannot collect results")
+            return {"status": "executor_unavailable"}
+
+        # Collect results from all experiments
+        logger.info(f"Collecting results from {len(experiment_ids)} experiments...")
+        experiment_results = self.training_executor.collect_batch_results(experiment_ids)
+
+        # Feed results to Historian for learning
+        historian = self.registry.get_agent("historian_001")
+        if historian:
+            logger.info(f"Integrating results into history for learning...")
+            integration_summary = historian.integrate_experiment_results(
+                experiment_results=experiment_results,
+                cycle_id=cycle_id
+            )
+
+            logger.info(f"Results integrated: {integration_summary['successful']} successful, "
+                       f"{integration_summary['failed']} failed")
+
+            return integration_summary
+        else:
+            logger.error("Historian agent not found - cannot integrate results")
+            return {"status": "historian_unavailable", "results": experiment_results}
+
+    def run_autonomous_cycle(
+        self,
+        cycle_id: int,
+        wait_for_completion: bool = True,
+        timeout: Optional[int] = 3600
+    ) -> Dict[str, Any]:
+        """
+        Run a complete autonomous research cycle with training execution and results feedback.
+
+        This method enables true autonomous operation:
+        1. Run multi-agent research cycle
+        2. Submit approved proposals for training
+        3. Wait for training completion
+        4. Collect results
+        5. Feed results to Historian for next cycle
+
+        Args:
+            cycle_id: Current cycle ID
+            wait_for_completion: Whether to wait for training jobs to complete
+            timeout: Maximum seconds to wait for training
+
+        Returns:
+            Complete cycle results including training outcomes
+        """
+        # Run multi-agent research cycle
+        cycle_results = self.run_research_cycle(cycle_id)
+
+        # Check if experiments were submitted
+        execution_stage = cycle_results.get("stages", {}).get("execution", {})
+        job_ids = execution_stage.get("job_ids", [])
+
+        if not job_ids:
+            logger.info("No training jobs submitted - cycle complete")
+            cycle_results["training_status"] = "no_jobs_submitted"
+            return cycle_results
+
+        logger.info(f"Submitted {len(job_ids)} training jobs")
+
+        # Wait for training completion if requested
+        if wait_for_completion and self.training_executor:
+            completion_status = self.wait_for_training_completion(
+                experiment_ids=job_ids,
+                timeout=timeout
+            )
+            cycle_results["training_completion"] = completion_status
+
+            # Collect and integrate results
+            completed_ids = [
+                exp_id for exp_id, status in completion_status.items()
+                if status == JobStatus.COMPLETED
+            ]
+
+            if completed_ids:
+                integration_summary = self.collect_and_integrate_results(
+                    experiment_ids=completed_ids,
+                    cycle_id=cycle_id
+                )
+                cycle_results["results_integration"] = integration_summary
+                logger.info(f"Autonomous cycle {cycle_id} complete with results integration")
+            else:
+                logger.warning("No experiments completed successfully")
+                cycle_results["results_integration"] = {"status": "no_completed_experiments"}
+        else:
+            logger.info("Not waiting for training completion - cycle complete")
+            cycle_results["training_status"] = "submitted_not_waiting"
+
+        return cycle_results
 
 
 def main():
