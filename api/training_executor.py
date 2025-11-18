@@ -4,6 +4,7 @@ Training Job Executor: Submit and monitor autonomous training experiments
 
 Bridges multi-agent decisions to actual training execution:
 - Submits approved proposals as training jobs
+- Calls Dev 1 AcuVue tools directly (preprocessing, training, evaluation)
 - Monitors job progress (polling or async)
 - Collects experiment results
 - Feeds results back to Historian for learning
@@ -14,6 +15,7 @@ This is the critical "hands" that enable autonomous operation.
 import json
 import time
 import requests
+import logging
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass, asdict
@@ -21,6 +23,19 @@ from datetime import datetime
 from enum import Enum
 
 from config.experiment_config_generator import get_config_generator, ConfigValidationError
+
+# Import Dev 1 AcuVue tools
+from tools.acuvue_tools import (
+    preprocess_dataset, run_training_job, run_evaluation_job,
+    generate_visualizations, TrainingJobError, PreprocessingError,
+    EvaluationError
+)
+from schemas.experiment_schemas import (
+    TrainingJobConfig, ExperimentSpec, MetricType,
+    PreprocessingChain, PreprocessingStep, PreprocessingType
+)
+
+logger = logging.getLogger(__name__)
 
 
 class JobStatus(Enum):
@@ -185,6 +200,272 @@ class TrainingExecutor:
 
         except requests.RequestException as e:
             raise TrainingExecutionError(f"Failed to connect to control plane: {e}")
+
+    def execute_with_acuvue_tools(
+        self,
+        proposal: Dict[str, Any],
+        cycle_id: int,
+        preprocess: bool = True,
+        generate_vis: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Execute training using Dev 1 AcuVue tools directly (not control plane).
+
+        This method implements the complete training pipeline:
+        1. Optional preprocessing (if preprocess=True)
+        2. Training job submission via run_training_job
+        3. Evaluation via run_evaluation_job
+        4. Optional visualization generation
+
+        Args:
+            proposal: Agent proposal with experiment_id and config changes
+            cycle_id: Current research cycle
+            preprocess: Whether to run preprocessing
+            generate_vis: Whether to generate CAM visualizations
+
+        Returns:
+            Dict with execution results and metrics
+
+        Raises:
+            TrainingExecutionError: If execution fails
+        """
+        experiment_id = proposal.get("experiment_id")
+        if not experiment_id:
+            raise TrainingExecutionError("Proposal missing experiment_id")
+
+        logger.info(f"Executing {experiment_id} with AcuVue tools (cycle {cycle_id})")
+
+        try:
+            # Generate validated config
+            config = self.config_generator.generate_config(
+                experiment_id=experiment_id,
+                proposal=proposal,
+                validate=True
+            )
+
+            # Create experiment directory
+            exp_dir = self.experiments_dir / experiment_id
+            exp_dir.mkdir(parents=True, exist_ok=True)
+
+            results = {
+                "experiment_id": experiment_id,
+                "cycle_id": cycle_id,
+                "status": "running",
+                "steps": []
+            }
+
+            # Step 1: Preprocessing (optional)
+            if preprocess:
+                try:
+                    logger.info(f"Preprocessing dataset for {experiment_id}")
+
+                    # Create preprocessing chain from config
+                    preprocessing_steps = config.get("preprocessing", [])
+                    if preprocessing_steps:
+                        chain = PreprocessingChain(
+                            chain_id=f"chain_{experiment_id}",
+                            steps=[
+                                PreprocessingStep(
+                                    type=PreprocessingType(step.get("type", "normalize")),
+                                    params=step.get("params", {})
+                                )
+                                for step in preprocessing_steps
+                            ]
+                        )
+
+                        dataset_id = config.get("dataset", "rimone")
+                        input_path = f"/Users/bengibson/Desktop/ARC/arc_clean/workspace/datasets/{dataset_id}"
+                        output_path = str(exp_dir / "preprocessed")
+
+                        preprocess_result = preprocess_dataset(
+                            dataset_id=dataset_id,
+                            preprocessing_chain=chain,
+                            input_path=input_path,
+                            output_path=output_path,
+                            cycle_id=cycle_id
+                        )
+
+                        results["steps"].append({
+                            "step": "preprocessing",
+                            "status": "success",
+                            "result": preprocess_result
+                        })
+
+                except PreprocessingError as e:
+                    logger.error(f"Preprocessing failed: {e}")
+                    results["steps"].append({
+                        "step": "preprocessing",
+                        "status": "failed",
+                        "error": str(e)
+                    })
+                    # Continue without preprocessing
+
+            # Step 2: Training
+            logger.info(f"Submitting training job for {experiment_id}")
+
+            # Convert config to TrainingJobConfig schema
+            job_config = self._create_training_job_config(
+                experiment_id=experiment_id,
+                config=config,
+                exp_dir=str(exp_dir)
+            )
+
+            training_result = run_training_job(
+                job_config=job_config,
+                cycle_id=cycle_id,
+                wait_for_completion=True  # Block until training completes
+            )
+
+            results["steps"].append({
+                "step": "training",
+                "status": "success",
+                "result": training_result
+            })
+
+            # Step 3: Evaluation
+            logger.info(f"Running evaluation for {experiment_id}")
+
+            checkpoint_path = training_result.get("checkpoint_dir", str(exp_dir / "checkpoints")) + f"/{experiment_id}.pt"
+            eval_dataset_path = config.get("eval_dataset_path", "/Users/bengibson/Desktop/ARC/arc_clean/workspace/datasets/rimone/test")
+
+            # Determine metrics to calculate
+            metrics_to_calc = [
+                MetricType.AUC,
+                MetricType.SENSITIVITY,
+                MetricType.SPECIFICITY,
+                MetricType.ACCURACY
+            ]
+
+            eval_result = run_evaluation_job(
+                experiment_id=experiment_id,
+                checkpoint_path=checkpoint_path,
+                eval_dataset_path=eval_dataset_path,
+                metrics=metrics_to_calc,
+                cycle_id=cycle_id
+            )
+
+            results["steps"].append({
+                "step": "evaluation",
+                "status": "success",
+                "result": eval_result
+            })
+
+            # Extract metrics
+            metrics = {}
+            for metric_result in eval_result.get("metrics", []):
+                metrics[metric_result["metric_type"].lower()] = metric_result["value"]
+
+            results["metrics"] = metrics
+
+            # Step 4: Visualization (optional)
+            if generate_vis:
+                try:
+                    logger.info(f"Generating visualizations for {experiment_id}")
+
+                    vis_result = generate_visualizations(
+                        experiment_id=experiment_id,
+                        checkpoint_path=checkpoint_path,
+                        dataset_path=eval_dataset_path,
+                        output_dir=str(exp_dir / "visualizations"),
+                        viz_types=["cam", "attention"],
+                        cycle_id=cycle_id
+                    )
+
+                    results["steps"].append({
+                        "step": "visualization",
+                        "status": "success",
+                        "result": vis_result
+                    })
+
+                except Exception as e:
+                    logger.warning(f"Visualization generation failed: {e}")
+                    results["steps"].append({
+                        "step": "visualization",
+                        "status": "failed",
+                        "error": str(e)
+                    })
+
+            # Mark as completed
+            results["status"] = "completed"
+            results["completed_at"] = datetime.now().isoformat()
+
+            # Save results to file
+            results_path = exp_dir / "results.json"
+            with open(results_path, 'w') as f:
+                json.dump(results, f, indent=2)
+
+            logger.info(f"Execution completed for {experiment_id}")
+
+            return results
+
+        except (TrainingJobError, EvaluationError) as e:
+            logger.error(f"Execution failed for {experiment_id}: {e}")
+            raise TrainingExecutionError(f"Execution failed: {str(e)}") from e
+
+    def _create_training_job_config(
+        self,
+        experiment_id: str,
+        config: Dict[str, Any],
+        exp_dir: str
+    ) -> TrainingJobConfig:
+        """
+        Convert config dict to TrainingJobConfig schema.
+
+        Args:
+            experiment_id: Experiment identifier
+            config: Experiment configuration
+            exp_dir: Experiment directory
+
+        Returns:
+            TrainingJobConfig instance
+        """
+        from schemas.experiment_schemas import (
+            Hyperparameters, OptimizerConfig, LossConfig,
+            ArchitectureConfig
+        )
+
+        # Build hyperparameters
+        hyperparams = Hyperparameters(
+            epochs=config.get("epochs", 10),
+            batch_size=config.get("batch_size", 8),
+            optimizer=OptimizerConfig(
+                type=config.get("optimizer", "adam"),
+                learning_rate=config.get("learning_rate", 0.0001),
+                weight_decay=config.get("weight_decay", 0.0001)
+            ),
+            loss=LossConfig(
+                type=config.get("loss", "focal"),
+                params=config.get("loss_params", {})
+            )
+        )
+
+        # Build architecture
+        architecture = ArchitectureConfig(
+            model_name=config.get("model", "efficientnet_b3"),
+            num_classes=config.get("num_classes", 2),
+            pretrained=config.get("pretrained", True),
+            dropout=config.get("dropout", 0.2)
+        )
+
+        # Build experiment spec
+        exp_spec = ExperimentSpec(
+            experiment_id=experiment_id,
+            hyperparameters=hyperparams,
+            architecture=architecture,
+            dataset_id=config.get("dataset", "rimone"),
+            task_type=config.get("task_type", "segmentation")
+        )
+
+        # Build job config
+        job_config = TrainingJobConfig(
+            job_id=f"job_{experiment_id}",
+            experiment_spec=exp_spec,
+            gpu_id=config.get("gpu_id", 0),
+            checkpoint_dir=f"{exp_dir}/checkpoints",
+            log_dir=f"{exp_dir}/logs"
+        )
+
+        return job_config
 
     def submit_batch(
         self,
