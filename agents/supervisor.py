@@ -182,7 +182,7 @@ class SupervisorAgent(BaseAgent):
 
     def _assess_risk(self, proposal: Dict[str, Any]) -> RiskLevel:
         """
-        Assess risk level of a proposal.
+        Assess risk level of a proposal using algorithmic rules.
 
         Args:
             proposal: Experiment proposal
@@ -191,12 +191,13 @@ class SupervisorAgent(BaseAgent):
             RiskLevel enum
         """
         # Read constraints
-        constraints = self.read_memory("constraints.json")
+        constraints = self.read_memory("constraints.json") or {}
 
         # Check for forbidden parameters
-        config_changes = proposal.get("config_changes", {})
+        config_changes = proposal.get("config_changes", {}) or proposal.get("changes", {})
         forbidden_ranges = constraints.get("forbidden_ranges", [])
 
+        # Check forbidden ranges (CRITICAL)
         for forbidden in forbidden_ranges:
             param = forbidden.get("parameter")
             min_val = forbidden.get("min")
@@ -204,17 +205,104 @@ class SupervisorAgent(BaseAgent):
 
             if param in config_changes:
                 value = config_changes[param]
-                if min_val <= value <= max_val:
-                    return RiskLevel.CRITICAL  # Forbidden range
+                if min_val is not None and max_val is not None:
+                    if min_val <= value <= max_val:
+                        return RiskLevel.CRITICAL  # Forbidden range
+                elif min_val is not None and value < min_val:
+                    return RiskLevel.CRITICAL
+                elif max_val is not None and value > max_val:
+                    return RiskLevel.CRITICAL
 
-        # Check novelty category
-        novelty = proposal.get("novelty_category", "exploit")
-        if novelty == "wildcat":
+        # Apply algorithmic safety rules
+        risk_violations = self._check_safety_rules(config_changes)
+
+        if risk_violations["critical"]:
+            return RiskLevel.CRITICAL
+        elif risk_violations["high"]:
             return RiskLevel.HIGH
-        elif novelty == "explore":
+        elif risk_violations["medium"]:
             return RiskLevel.MEDIUM
         else:
             return RiskLevel.LOW
+
+    def _check_safety_rules(self, config: Dict[str, Any]) -> Dict[str, List[str]]:
+        """
+        Check algorithmic safety rules (not LLM-based).
+
+        Args:
+            config: Configuration dict
+
+        Returns:
+            Dict with violations categorized by severity
+        """
+        violations = {
+            "critical": [],
+            "high": [],
+            "medium": [],
+            "low": []
+        }
+
+        # CRITICAL VIOLATIONS (auto-veto)
+
+        # 1. Learning rate too high (unstable training)
+        lr = config.get("learning_rate")
+        if lr is not None and lr > 0.01:
+            violations["critical"].append(f"Learning rate {lr} > 0.01 (training instability)")
+
+        # 2. Batch size too large (memory issues)
+        bs = config.get("batch_size")
+        if bs is not None and bs > 64:
+            violations["critical"].append(f"Batch size {bs} > 64 (GPU memory risk)")
+
+        # 3. Epochs too high (time waste)
+        epochs = config.get("epochs")
+        if epochs is not None and epochs > 200:
+            violations["critical"].append(f"Epochs {epochs} > 200 (excessive training time)")
+
+        # 4. Invalid optimizer
+        optimizer = config.get("optimizer")
+        valid_optimizers = ["adam", "adamw", "sgd", "rmsprop"]
+        if optimizer is not None and optimizer not in valid_optimizers:
+            violations["critical"].append(f"Unknown optimizer '{optimizer}'")
+
+        # 5. Invalid loss function
+        loss = config.get("loss")
+        valid_losses = ["focal", "cross_entropy", "dice", "bce", "weighted_focal", "ce"]
+        if loss is not None and loss not in valid_losses:
+            violations["critical"].append(f"Unknown loss function '{loss}'")
+
+        # HIGH VIOLATIONS (strong warning)
+
+        # 1. Learning rate too low (no learning)
+        if lr is not None and lr < 1e-6:
+            violations["high"].append(f"Learning rate {lr} < 1e-6 (too small for learning)")
+
+        # 2. Batch size too small (noisy gradients)
+        if bs is not None and bs < 2:
+            violations["high"].append(f"Batch size {bs} < 2 (unstable gradients)")
+
+        # 3. Dropout too high (underfitting)
+        dropout = config.get("dropout")
+        if dropout is not None and dropout > 0.7:
+            violations["high"].append(f"Dropout {dropout} > 0.7 (too aggressive regularization)")
+
+        # 4. Epochs too low (undertraining)
+        if epochs is not None and epochs < 3:
+            violations["high"].append(f"Epochs {epochs} < 3 (likely undertrained)")
+
+        # MEDIUM VIOLATIONS (minor warnings)
+
+        # 1. Uncommon learning rate
+        if lr is not None and (lr > 0.001 or lr < 1e-5):
+            if "critical" not in str(violations) and "high" not in str(violations):
+                violations["medium"].append(f"Learning rate {lr} outside typical range [1e-5, 1e-3]")
+
+        # 2. Large image size
+        input_size = config.get("input_size") or config.get("image_size")
+        if input_size is not None and input_size > 1024:
+            violations["medium"].append(f"Image size {input_size} > 1024 (slow training)")
+
+        return violations
 
     def _check_constraints(self, proposal: Dict[str, Any]) -> List[str]:
         """
