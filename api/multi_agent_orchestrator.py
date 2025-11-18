@@ -44,6 +44,7 @@ from llm.router import LLMRouter
 from llm.health_monitor import get_health_monitor
 
 from config.loader import get_config_loader
+from llm.decision_logger import get_decision_logger, LogEventType
 
 # Configure logging
 logging.basicConfig(
@@ -111,6 +112,10 @@ class MultiAgentOrchestrator:
             default_strategy=ConflictResolutionStrategy.CONSERVATIVE,
             supervisor_override_threshold=0.9
         )
+
+        # Initialize decision logger
+        log_dir = str(self.memory_path / "logs")
+        self.decision_logger = get_decision_logger(log_dir=log_dir)
 
         # Initialize agents
         self._initialize_agents()
@@ -231,6 +236,13 @@ class MultiAgentOrchestrator:
         logger.info(f"=== Starting Multi-Agent Research Cycle {cycle_id} ===")
         cycle_start = time.time()
 
+        # Log cycle start
+        self.decision_logger.log_cycle_event(
+            cycle_id=cycle_id,
+            event_type=LogEventType.CYCLE_STARTED,
+            metadata={"offline_mode": self.offline_mode}
+        )
+
         results = {
             "cycle_id": cycle_id,
             "timestamp": datetime.now().isoformat(),
@@ -307,6 +319,18 @@ class MultiAgentOrchestrator:
 
             logger.info(f"=== Cycle {cycle_id} Complete ({cycle_duration:.2f}s) ===")
             logger.info(f"Proposals: {results['metrics']['total_proposals']}, Approved: {results['metrics']['approved_proposals']}")
+
+            # Log cycle completion
+            self.decision_logger.log_cycle_event(
+                cycle_id=cycle_id,
+                event_type=LogEventType.CYCLE_COMPLETED,
+                metadata={
+                    "duration_seconds": cycle_duration,
+                    "total_proposals": results['metrics']['total_proposals'],
+                    "approved_proposals": results['metrics']['approved_proposals'],
+                    "consensus_rate": results['metrics']['consensus_rate']
+                }
+            )
 
             return results
 
@@ -419,9 +443,25 @@ class MultiAgentOrchestrator:
         for proposal in proposals:
             # Collect votes from all active agents
             votes = []
+            proposal_id = proposal.get("experiment_id", f"proposal_{cycle_id}")
 
             for agent in self.registry.get_active_agents():
                 vote = agent.vote_on_proposal(proposal)
+
+                # Log individual vote
+                self.decision_logger.log_vote(
+                    cycle_id=cycle_id,
+                    proposal_id=proposal_id,
+                    agent_id=agent.agent_id,
+                    agent_role=agent.role,
+                    voting_weight=agent.voting_weight,
+                    decision=vote["decision"],
+                    confidence=vote["confidence"],
+                    reasoning=vote["reasoning"],
+                    constraints_checked=vote.get("constraints_checked", []),
+                    metadata={"proposal_type": proposal.get("type", "unknown")}
+                )
+
                 votes.append({
                     "agent_id": agent.agent_id,
                     "role": agent.role,
@@ -435,7 +475,26 @@ class MultiAgentOrchestrator:
             vote_result = self.voting_system.conduct_vote(proposal, votes)
             vote_results.append(vote_result)
 
-            # Log vote
+            # Log consensus result
+            vote_distribution = {}
+            for vote in votes:
+                decision = vote["decision"]
+                vote_distribution[decision] = vote_distribution.get(decision, 0) + 1
+
+            self.decision_logger.log_consensus(
+                cycle_id=cycle_id,
+                proposal_id=proposal_id,
+                total_votes=vote_result.total_votes,
+                weighted_score=vote_result.weighted_score,
+                consensus_reached=vote_result.consensus_reached,
+                final_decision=vote_result.decision.value,
+                confidence=vote_result.confidence,
+                vote_distribution=vote_distribution,
+                participating_agents=[v["agent_id"] for v in votes],
+                metadata={"proposal_type": proposal.get("type", "unknown")}
+            )
+
+            # Also log to legacy format for backward compatibility
             self._log_vote(cycle_id, proposal, vote_result)
 
         return {
@@ -464,8 +523,30 @@ class MultiAgentOrchestrator:
 
             # Resolve if no consensus
             if not vote_result.consensus_reached:
+                # Detect controversy
+                controversy = self.conflict_resolver.detect_controversy(vote_result)
+
                 resolution = self.conflict_resolver.resolve_conflict(vote_result)
                 resolutions.append(resolution)
+
+                # Log conflict with structured logger
+                self.decision_logger.log_conflict(
+                    cycle_id=cycle_id,
+                    proposal_id=vote_result.proposal_id,
+                    conflict_type=controversy.get("reason", "low_consensus"),
+                    entropy=controversy.get("entropy", 0.0),
+                    resolution_strategy=resolution.get("resolution_strategy", "unknown"),
+                    original_decision=vote_result.decision.value,
+                    final_decision=resolution.get("final_decision", "reject"),
+                    override_applied=resolution.get("override_applied", False),
+                    reasoning=resolution.get("reasoning", ""),
+                    metadata={
+                        "controversial": controversy.get("controversial", False),
+                        "vote_distribution": controversy.get("decision_distribution", {})
+                    }
+                )
+
+                # Also log to legacy format
                 self._log_conflict_resolution(cycle_id, vote_result.proposal_id, resolution)
 
         return {
@@ -487,8 +568,33 @@ class MultiAgentOrchestrator:
             if d["decision"] == "approve"
         ]
 
-        # Log supervisor decisions
+        # Log supervisor decisions with structured logger
         for decision in decisions:
+            proposal_id = decision.get("experiment_id", f"proposal_{cycle_id}")
+
+            # Extract supervisor decision details
+            supervisor_decision = decision.get("decision", "reject")
+            consensus_decision = decision.get("consensus_decision", "unknown")
+            override_consensus = decision.get("override_consensus", False)
+
+            self.decision_logger.log_supervisor_decision(
+                cycle_id=cycle_id,
+                proposal_id=proposal_id,
+                supervisor_decision=supervisor_decision,
+                risk_assessment=decision.get("risk_level", "unknown"),
+                consensus_decision=consensus_decision,
+                override_consensus=override_consensus,
+                confidence=decision.get("confidence", 0.5),
+                reasoning=decision.get("reasoning", ""),
+                constraints_violated=decision.get("constraints_violated", []),
+                safety_concerns=decision.get("safety_concerns", []),
+                metadata={
+                    "proposal_type": decision.get("type", "unknown"),
+                    "supervisor_agent": "supervisor_001"
+                }
+            )
+
+            # Also log to legacy format
             self._log_supervisor_decision(cycle_id, decision)
 
         return {
