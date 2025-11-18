@@ -926,3 +926,210 @@ def _apply_patch(patch_path: str, target_dir: str) -> None:
     """Apply patch to target directory."""
     # Placeholder - would run git apply
     pass
+
+
+# ============================================================================
+# Dataset Management Tools
+# ============================================================================
+
+def run_preprocessing(
+    dataset_name: str,
+    input_path: str,
+    output_path: str,
+    cycle_id: int = 0
+) -> Dict[str, Any]:
+    """
+    Run AcuVue preprocessing pipeline on dataset.
+
+    Applies:
+    - normalize_illumination (CLAHE on green channel)
+    - center_crop (remove black borders)
+    - entropy calculation
+    - vessel enhancement (future)
+
+    Args:
+        dataset_name: Dataset identifier
+        input_path: Input dataset path (should have images/ subdirectory)
+        output_path: Output path for processed images
+        cycle_id: Current research cycle
+
+    Returns:
+        Dict with preprocessing results
+
+    Raises:
+        PreprocessingError: If preprocessing fails
+    """
+    logger.info(f"Running AcuVue preprocessing on dataset: {dataset_name}")
+
+    try:
+        # Import AcuVue preprocessing functions
+        sys.path.insert(0, ACUVUE_REPO_PATH)
+        from src.data.preprocess import normalize_illumination, center_crop
+        import cv2
+        import numpy as np
+
+        input_dir = Path(input_path) / "images"
+        output_dir = Path(output_path) / "images"
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        if not input_dir.exists():
+            raise PreprocessingError(f"Input images directory not found: {input_dir}")
+
+        # Get all images
+        image_files = list(input_dir.glob("*.jpg")) + list(input_dir.glob("*.png"))
+
+        if len(image_files) == 0:
+            raise PreprocessingError(f"No images found in {input_dir}")
+
+        logger.info(f"Processing {len(image_files)} images...")
+
+        processed_count = 0
+        failed_count = 0
+
+        for img_file in image_files:
+            try:
+                # Read image
+                img = cv2.imread(str(img_file))
+                if img is None:
+                    logger.warning(f"Failed to read: {img_file}")
+                    failed_count += 1
+                    continue
+
+                # Apply AcuVue preprocessing pipeline
+                # 1. Normalize illumination (CLAHE on green channel)
+                img = normalize_illumination(img)
+
+                # 2. Center crop to remove black borders
+                img = center_crop(img, margin_ratio=0.1)
+
+                # 3. Resize to standard size
+                img = cv2.resize(img, (512, 512))
+
+                # Save processed image
+                output_file = output_dir / img_file.name
+                cv2.imwrite(str(output_file), img)
+
+                processed_count += 1
+
+            except Exception as e:
+                logger.error(f"Failed to process {img_file.name}: {e}")
+                failed_count += 1
+
+        # Copy masks if they exist
+        masks_input = Path(input_path) / "masks"
+        if masks_input.exists():
+            masks_output = Path(output_path) / "masks"
+            masks_output.mkdir(parents=True, exist_ok=True)
+
+            mask_files = list(masks_input.glob("*.png"))
+            for mask_file in mask_files:
+                # Masks just need resizing
+                mask = cv2.imread(str(mask_file), cv2.IMREAD_GRAYSCALE)
+                if mask is not None:
+                    mask_resized = cv2.resize(mask, (512, 512))
+                    cv2.imwrite(str(masks_output / mask_file.name), mask_resized)
+
+        # Create metadata
+        from tools.dataset_unpacker import create_metadata_json
+
+        create_metadata_json(
+            dataset_dir=output_path,
+            dataset_name=f"{dataset_name}_processed",
+            description=f"AcuVue preprocessed version of {dataset_name}",
+            source=input_path
+        )
+
+        logger.info(f"Preprocessing complete: {processed_count} processed, {failed_count} failed")
+
+        return {
+            "status": "success",
+            "dataset_name": dataset_name,
+            "input_path": input_path,
+            "output_path": output_path,
+            "images_processed": processed_count,
+            "images_failed": failed_count,
+            "total_images": len(image_files),
+            "cycle_id": cycle_id
+        }
+
+    except Exception as e:
+        logger.error(f"Preprocessing pipeline failed: {e}")
+        raise PreprocessingError(f"Preprocessing failed: {str(e)}") from e
+
+
+def unpack_dataset_archive(
+    archive_path: str,
+    dataset_name: str,
+    output_dir: str,
+    normalize: bool = True
+) -> Dict[str, Any]:
+    """
+    Unpack and optionally normalize dataset archive.
+
+    Args:
+        archive_path: Path to ZIP or TAR archive
+        dataset_name: Dataset identifier
+        output_dir: Output directory
+        normalize: Whether to normalize structure
+
+    Returns:
+        Dict with unpacking results
+    """
+    logger.info(f"Unpacking dataset archive: {archive_path}")
+
+    from tools.dataset_unpacker import unpack_dataset
+    from tools.normalize_dataset_structure import normalize_dataset_structure, detect_dataset_format
+
+    # First, unpack the archive
+    temp_dir = Path(output_dir) / f"{dataset_name}_temp"
+
+    unpack_result = unpack_dataset(
+        archive_path=archive_path,
+        output_dir=str(temp_dir),
+        validate=True
+    )
+
+    # Detect format
+    format_info = detect_dataset_format(str(temp_dir))
+
+    # Normalize if needed
+    if normalize and format_info.get("needs_normalization", False):
+        logger.info(f"Normalizing dataset structure (format: {format_info.get('format')})")
+
+        final_dir = Path(output_dir) / dataset_name
+
+        norm_result = normalize_dataset_structure(
+            input_dir=str(temp_dir),
+            output_dir=str(final_dir),
+            dataset_name=dataset_name,
+            mode="move"  # Move files to save space
+        )
+
+        # Clean up temp directory
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+        return {
+            "status": "success",
+            "dataset_name": dataset_name,
+            "archive_path": archive_path,
+            "output_dir": str(final_dir),
+            "normalized": True,
+            "format_detected": format_info.get("format"),
+            **norm_result
+        }
+
+    else:
+        # Already in correct format or normalization disabled
+        final_dir = Path(output_dir) / dataset_name
+        if temp_dir != final_dir:
+            shutil.move(str(temp_dir), str(final_dir))
+
+        return {
+            "status": "success",
+            "dataset_name": dataset_name,
+            "archive_path": archive_path,
+            "output_dir": str(final_dir),
+            "normalized": False,
+            "format_detected": format_info.get("format"),
+            **unpack_result
+        }
