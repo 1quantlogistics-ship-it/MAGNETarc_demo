@@ -19,6 +19,15 @@ try:
 except ImportError:
     ARCHITECTURE_GRAMMAR_AVAILABLE = False
 
+# Phase E: Augmentation policy validation (Task 1.7)
+try:
+    from schemas.augmentation_policy import (
+        AugmentationPolicy, validate_policy_safety
+    )
+    AUGMENTATION_POLICY_AVAILABLE = True
+except ImportError:
+    AUGMENTATION_POLICY_AVAILABLE = False
+
 
 class CriticAgent(BaseAgent):
     """
@@ -134,6 +143,53 @@ class CriticAgent(BaseAgent):
                     "confidence": 0.90,
                     "reasoning": f"Invalid architecture grammar: {str(e)}",
                     "suggested_changes": "Fix grammar syntax or validation errors"
+                }
+
+        # Phase E Task 1.7: Validate augmentation policy if present
+        if AUGMENTATION_POLICY_AVAILABLE and "augmentation_policy" in config_changes:
+            try:
+                # Parse policy from config
+                policy_dict = config_changes["augmentation_policy"]
+                policy = AugmentationPolicy(**policy_dict)
+
+                # Validate clinical safety
+                is_valid, error_msg = validate_policy_safety(policy)
+
+                if not is_valid:
+                    return {
+                        "decision": "reject",
+                        "confidence": 0.95,
+                        "reasoning": f"Augmentation policy safety validation failed: {error_msg}",
+                        "suggested_changes": "Revise policy to meet DRI ≥ 0.6 constraint and safe operation bounds"
+                    }
+
+                # Additional DRI constraint check
+                if policy.dri_constraint < 0.6:
+                    return {
+                        "decision": "reject",
+                        "confidence": 0.98,
+                        "reasoning": f"DRI constraint ({policy.dri_constraint:.2f}) below minimum threshold (0.6)",
+                        "suggested_changes": "Increase DRI constraint to ≥ 0.6 for clinical safety"
+                    }
+
+                # Check for forbidden operations (defense-in-depth)
+                forbidden_keywords = ["cutout", "erasing", "elastic", "color_jitter", "hue", "saturation"]
+                for op in policy.operations:
+                    op_name = op.op_type.value.lower()
+                    if any(keyword in op_name for keyword in forbidden_keywords):
+                        return {
+                            "decision": "reject",
+                            "confidence": 0.99,
+                            "reasoning": f"Forbidden operation detected: {op.op_type}. Risks DRI corruption.",
+                            "suggested_changes": "Remove forbidden operations (cutout, color jitter, strong elastic)"
+                        }
+
+            except Exception as e:
+                return {
+                    "decision": "reject",
+                    "confidence": 0.90,
+                    "reasoning": f"Invalid augmentation policy: {str(e)}",
+                    "suggested_changes": "Fix policy syntax or validation errors"
                 }
 
         # Check for forbidden parameter ranges
