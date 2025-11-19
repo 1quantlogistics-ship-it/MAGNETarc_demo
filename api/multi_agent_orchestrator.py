@@ -46,6 +46,8 @@ from llm.health_monitor import get_health_monitor
 from config.loader import get_config_loader
 from llm.decision_logger import get_decision_logger, LogEventType
 from tools.dev_logger import get_dev_logger
+from tools.drift_detector import get_drift_detector
+from tools.mode_collapse_engine import get_mode_collapse_engine
 
 # Import training executor for autonomous execution
 try:
@@ -128,6 +130,12 @@ class MultiAgentOrchestrator:
 
         # Initialize FDA development logger
         self.dev_logger = get_dev_logger()
+
+        # Initialize drift detector
+        self.drift_detector = get_drift_detector()
+
+        # Initialize mode collapse engine
+        self.mode_collapse_engine = get_mode_collapse_engine()
 
         # Initialize training executor (for autonomous operation)
         self.training_executor = None
@@ -360,6 +368,9 @@ class MultiAgentOrchestrator:
             # FDA Development Logging: Log research cycle
             self._log_cycle_to_fda(cycle_id, results, cycle_duration)
 
+            # Drift Detection: Check for performance and diversity drift
+            self._run_drift_detection(cycle_id, results)
+
             # Snapshot system state for FDA traceability
             self.dev_logger.snapshot_system_state(cycle_id=cycle_id)
 
@@ -509,8 +520,33 @@ class MultiAgentOrchestrator:
                    f"{len(exp_result.get('proposals', []))} from Explorer, "
                    f"{len(param_result.get('proposals', []))} from Parameter Scientist")
 
-        # Apply diversity filter to prevent duplicate experiments
-        filtered_proposals = self._filter_duplicate_proposals(all_proposals, cycle_id)
+        # Mode Collapse Detection: Check for diversity collapse before filtering
+        collapse_result = self.mode_collapse_engine.detect_mode_collapse(
+            proposals=all_proposals,
+            cycle_id=cycle_id
+        )
+
+        if collapse_result.collapse_detected:
+            logger.warning(
+                f"Mode collapse detected: {collapse_result.collapse_type} "
+                f"(severity: {collapse_result.severity})"
+            )
+
+            # Trigger exploration mode if collapse is severe
+            if collapse_result.severity in ["high", "critical"]:
+                self.mode_collapse_engine.trigger_exploration_mode(
+                    cycle_id=cycle_id,
+                    reason=f"{collapse_result.collapse_type}: {collapse_result.recommended_action}"
+                )
+
+        # Apply diversity enforcement (mode collapse engine)
+        filtered_proposals, diversity_action = self.mode_collapse_engine.enforce_diversity(
+            proposals=all_proposals,
+            cycle_id=cycle_id
+        )
+
+        # Apply additional historical duplicate filter
+        filtered_proposals = self._filter_duplicate_proposals(filtered_proposals, cycle_id)
         removed_count = len(all_proposals) - len(filtered_proposals)
 
         if removed_count > 0:
@@ -520,13 +556,20 @@ class MultiAgentOrchestrator:
                 agent="Orchestrator",
                 action="diversity_filter",
                 message=f"Rejected {removed_count} duplicate/recent proposals to maintain diversity",
-                metadata={"removed_count": removed_count, "cycle_id": cycle_id}
+                metadata={
+                    "removed_count": removed_count,
+                    "cycle_id": cycle_id,
+                    "mode_collapse_detected": collapse_result.collapse_detected,
+                    "collapse_type": collapse_result.collapse_type if collapse_result.collapse_detected else None
+                }
             )
 
         return {
             "proposals": filtered_proposals,
             "total_count": len(filtered_proposals),
             "filtered_count": removed_count,
+            "mode_collapse_detected": collapse_result.collapse_detected,
+            "collapse_details": collapse_result.details if collapse_result.collapse_detected else None,
             "timestamp": datetime.now().isoformat()
         }
 
@@ -1032,6 +1075,53 @@ class MultiAgentOrchestrator:
         summary_parts.append(f"Consensus Rate: {consensus_rate:.1%}")
 
         return " | ".join(summary_parts)
+
+    def _run_drift_detection(self, cycle_id: int, results: Dict) -> None:
+        """
+        Run drift detection after cycle completion.
+
+        Args:
+            cycle_id: Cycle ID
+            results: Complete cycle results
+        """
+        try:
+            # Performance drift detection (stub - need actual AUC from results)
+            # In a real implementation, would extract AUC from completed experiments
+            # For now, use consensus_rate as a proxy metric
+            consensus_rate = results.get("metrics", {}).get("consensus_rate", 0.0)
+
+            # Diversity drift detection
+            proposals_stage = results.get("stages", {}).get("proposals", {})
+            proposals = proposals_stage.get("proposals", [])
+
+            if proposals:
+                # Check diversity drift
+                diversity_result = self.drift_detector.detect_diversity_drift(
+                    proposal_configs=proposals,
+                    cycle_id=cycle_id
+                )
+
+                logger.info(f"Diversity drift check: detected={diversity_result.drift_detected}, "
+                          f"score={diversity_result.drift_score:.2f}, "
+                          f"action={diversity_result.recommended_action}")
+
+                # Store drift result in cycle results
+                results["drift_detection"] = {
+                    "diversity": {
+                        "detected": diversity_result.drift_detected,
+                        "score": diversity_result.drift_score,
+                        "severity": diversity_result.severity,
+                        "action": diversity_result.recommended_action,
+                        "details": diversity_result.details
+                    }
+                }
+
+                # TODO: Trigger Director mode change if high drift
+                # if diversity_result.drift_detected and diversity_result.severity == "high":
+                #     self._trigger_exploration_mode(cycle_id)
+
+        except Exception as e:
+            logger.warning(f"Drift detection failed for cycle {cycle_id}: {e}")
 
     def _log_agent_decision(
         self,

@@ -27,7 +27,7 @@ Example Usage:
 
 import os
 from pathlib import Path
-from typing import List, Optional, Literal
+from typing import List, Optional, Literal, Dict, Tuple
 from pydantic import Field, field_validator, ConfigDict
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
@@ -163,6 +163,45 @@ class ARCSettings(BaseSettings):
         ge=1,
         le=10,
         description="Maximum concurrent training jobs"
+    )
+
+    # ========================================================================
+    # Dataset Fusion Configuration
+    # ========================================================================
+
+    enable_dataset_fusion: bool = Field(
+        default=False,
+        description="Enable multi-dataset fusion for training"
+    )
+
+    fusion_datasets: List[str] = Field(
+        default=[],
+        description="List of datasets to fuse (e.g., ['rimone', 'refuge'])"
+    )
+
+    fusion_weights: Optional[Dict[str, float]] = Field(
+        default=None,
+        description="Dataset sampling weights (default: equal weights)"
+    )
+
+    fusion_target_size: Tuple[int, int] = Field(
+        default=(512, 512),
+        description="Target image size for dataset harmonization"
+    )
+
+    fusion_harmonization_strategy: str = Field(
+        default="resize",
+        description="Harmonization strategy: resize, crop, or pad"
+    )
+
+    cross_dataset_validation: bool = Field(
+        default=False,
+        description="Use one dataset exclusively for validation"
+    )
+
+    validation_dataset: Optional[str] = Field(
+        default=None,
+        description="Dataset to use only for validation (requires cross_dataset_validation=True)"
     )
 
     # ========================================================================

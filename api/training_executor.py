@@ -25,6 +25,7 @@ from enum import Enum
 from config import get_settings
 from config.experiment_config_generator import get_config_generator, ConfigValidationError
 from tools.dev_logger import get_dev_logger
+from tools.failure_predictor import get_failure_predictor
 
 # Import Dev 1 AcuVue tools
 from tools.acuvue_tools import (
@@ -114,6 +115,9 @@ class TrainingExecutor:
 
         # Track active jobs
         self.active_jobs: Dict[str, TrainingJob] = {}
+
+        # Initialize failure predictor
+        self.failure_predictor = get_failure_predictor()
 
         # Ensure directories exist
         self.experiments_dir.mkdir(parents=True, exist_ok=True)
@@ -891,6 +895,161 @@ class TrainingExecutor:
             summary_parts.append(f"Steps: {', '.join(completed_steps)}")
 
         return " | ".join(summary_parts)
+
+    def monitor_training_with_failure_prediction(
+        self,
+        experiment_id: str,
+        cycle_id: int,
+        metrics_log_path: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Monitor training metrics and predict failures in real-time.
+
+        Reads training metrics from log file and applies failure prediction
+        for gradient explosion, loss spikes, instability, and resource exhaustion.
+
+        Args:
+            experiment_id: Experiment identifier
+            cycle_id: Current research cycle
+            metrics_log_path: Path to metrics log file (JSON lines format)
+
+        Returns:
+            Dict with monitoring results and failure predictions
+        """
+        exp_dir = self.experiments_dir / experiment_id
+
+        if metrics_log_path is None:
+            metrics_log_path = exp_dir / "training_metrics.jsonl"
+        else:
+            metrics_log_path = Path(metrics_log_path)
+
+        predictions = {
+            "experiment_id": experiment_id,
+            "cycle_id": cycle_id,
+            "failures_detected": [],
+            "warnings": [],
+            "recovery_actions": []
+        }
+
+        try:
+            # Read metrics log (JSONL format: one JSON object per line)
+            if not metrics_log_path.exists():
+                logger.warning(f"Metrics log not found: {metrics_log_path}")
+                return predictions
+
+            with open(metrics_log_path, 'r') as f:
+                for line_num, line in enumerate(f):
+                    if not line.strip():
+                        continue
+
+                    try:
+                        metric_entry = json.loads(line)
+                        step = metric_entry.get("step", line_num)
+
+                        # Predict gradient explosion
+                        if "gradient_norm" in metric_entry:
+                            grad_prediction = self.failure_predictor.predict_gradient_explosion(
+                                gradient_norm=float(metric_entry["gradient_norm"]),
+                                step=step,
+                                cycle_id=cycle_id
+                            )
+
+                            if grad_prediction.failure_predicted:
+                                predictions["failures_detected"].append({
+                                    "type": "gradient_explosion",
+                                    "step": step,
+                                    "severity": grad_prediction.severity,
+                                    "action": grad_prediction.recommended_action,
+                                    "details": grad_prediction.details
+                                })
+
+                                logger.warning(
+                                    f"[{experiment_id}] Gradient explosion predicted at step {step}: "
+                                    f"{grad_prediction.recommended_action}"
+                                )
+
+                        # Predict loss spike
+                        if "loss" in metric_entry:
+                            loss_prediction = self.failure_predictor.predict_loss_spike(
+                                current_loss=float(metric_entry["loss"]),
+                                step=step,
+                                cycle_id=cycle_id
+                            )
+
+                            if loss_prediction.failure_predicted:
+                                predictions["failures_detected"].append({
+                                    "type": "loss_spike",
+                                    "step": step,
+                                    "severity": loss_prediction.severity,
+                                    "action": loss_prediction.recommended_action,
+                                    "details": loss_prediction.details
+                                })
+
+                                logger.warning(
+                                    f"[{experiment_id}] Loss spike predicted at step {step}: "
+                                    f"{loss_prediction.recommended_action}"
+                                )
+
+                        # Predict instability (oscillation/plateau)
+                        if "accuracy" in metric_entry:
+                            instability_prediction = self.failure_predictor.predict_instability(
+                                current_metric=float(metric_entry["accuracy"]),
+                                metric_name="accuracy",
+                                step=step,
+                                cycle_id=cycle_id
+                            )
+
+                            if instability_prediction.failure_predicted:
+                                predictions["warnings"].append({
+                                    "type": "instability",
+                                    "step": step,
+                                    "severity": instability_prediction.severity,
+                                    "action": instability_prediction.recommended_action,
+                                    "details": instability_prediction.details
+                                })
+
+                    except json.JSONDecodeError as e:
+                        logger.warning(f"Failed to parse metrics line {line_num}: {e}")
+                        continue
+
+            # Predict resource exhaustion (once per monitoring call)
+            resource_prediction = self.failure_predictor.predict_resource_exhaustion(
+                cycle_id=cycle_id
+            )
+
+            if resource_prediction.failure_predicted:
+                predictions["failures_detected"].append({
+                    "type": "resource_exhaustion",
+                    "severity": resource_prediction.severity,
+                    "action": resource_prediction.recommended_action,
+                    "details": resource_prediction.details
+                })
+
+                logger.warning(
+                    f"[{experiment_id}] Resource exhaustion predicted: "
+                    f"{resource_prediction.recommended_action}"
+                )
+
+            # Summary
+            num_failures = len(predictions["failures_detected"])
+            num_warnings = len(predictions["warnings"])
+
+            if num_failures > 0:
+                logger.error(
+                    f"[{experiment_id}] Training monitoring detected {num_failures} critical failures"
+                )
+            elif num_warnings > 0:
+                logger.info(
+                    f"[{experiment_id}] Training monitoring detected {num_warnings} warnings"
+                )
+            else:
+                logger.info(f"[{experiment_id}] Training monitoring: no issues detected")
+
+            return predictions
+
+        except Exception as e:
+            logger.error(f"Training monitoring failed for {experiment_id}: {e}")
+            return predictions
 
 
 def get_training_executor(
