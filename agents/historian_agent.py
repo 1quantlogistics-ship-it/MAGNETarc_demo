@@ -14,6 +14,15 @@ from agents.base import BaseAgent, AgentCapability
 from llm.router import LLMRouter
 from tools.world_model import get_world_model
 
+# Phase E: Architecture grammar tracking
+try:
+    from schemas.architecture_grammar import (
+        ArchitectureGrammar, classify_architecture_family, ArchitectureFamily
+    )
+    ARCHITECTURE_GRAMMAR_AVAILABLE = True
+except ImportError:
+    ARCHITECTURE_GRAMMAR_AVAILABLE = False
+
 
 class HistorianAgent(BaseAgent):
     """
@@ -204,6 +213,11 @@ class HistorianAgent(BaseAgent):
             status = result.get("status")
             config = result.get("config", {})
 
+            # Phase E: Extract architecture family if grammar present
+            architecture_family = None
+            if ARCHITECTURE_GRAMMAR_AVAILABLE:
+                architecture_family = self._extract_architecture_family(config)
+
             # Add to history
             history_entry = {
                 "experiment_id": experiment_id,
@@ -214,7 +228,8 @@ class HistorianAgent(BaseAgent):
                 "completed_at": result.get("completed_at"),
                 "duration_seconds": result.get("duration_seconds"),
                 "proposal_type": result.get("proposal_type"),
-                "risk_level": result.get("risk_level")
+                "risk_level": result.get("risk_level"),
+                "architecture_family": architecture_family  # Phase E: Track architecture family
             }
             training_history["experiments"].append(history_entry)
 
@@ -326,6 +341,107 @@ class HistorianAgent(BaseAgent):
         # Write updated constraints
         with open(constraints_path, 'w') as f:
             json.dump(constraints, f, indent=2)
+
+    def _extract_architecture_family(self, config: Dict[str, Any]) -> Optional[str]:
+        """
+        Extract architecture family from experiment config.
+
+        Args:
+            config: Experiment configuration
+
+        Returns:
+            Architecture family name or None
+        """
+        if not ARCHITECTURE_GRAMMAR_AVAILABLE:
+            return None
+
+        try:
+            # Check if config has architecture grammar
+            arch_config = config.get("architecture", {})
+            grammar_dict = arch_config.get("grammar")
+
+            if grammar_dict:
+                # Parse grammar and classify
+                grammar = ArchitectureGrammar(**grammar_dict)
+                family = classify_architecture_family(grammar)
+                return family.value
+
+            # Fallback: check for architecture_grammar in root config
+            if "architecture_grammar" in config:
+                grammar = ArchitectureGrammar(**config["architecture_grammar"])
+                family = classify_architecture_family(grammar)
+                return family.value
+
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.debug(f"Could not extract architecture family: {e}")
+
+        return None
+
+    def get_architecture_family_performance(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Get performance statistics grouped by architecture family.
+
+        Returns:
+            Dict mapping architecture family to performance stats
+        """
+        if not ARCHITECTURE_GRAMMAR_AVAILABLE:
+            return {}
+
+        training_history_path = Path(self.memory_path) / "training_history.json"
+        if not training_history_path.exists():
+            return {}
+
+        with open(training_history_path, 'r') as f:
+            training_history = json.load(f)
+
+        # Group experiments by architecture family
+        family_stats = {}
+
+        for exp in training_history.get("experiments", []):
+            family = exp.get("architecture_family")
+            if not family:
+                continue
+
+            if family not in family_stats:
+                family_stats[family] = {
+                    "count": 0,
+                    "successful": 0,
+                    "failed": 0,
+                    "avg_auc": [],
+                    "best_auc": 0.0,
+                    "experiments": []
+                }
+
+            stats = family_stats[family]
+            stats["count"] += 1
+
+            if exp.get("status") == "completed":
+                stats["successful"] += 1
+                metrics = exp.get("metrics", {})
+                auc = metrics.get("auc")
+
+                if auc:
+                    stats["avg_auc"].append(auc)
+                    stats["best_auc"] = max(stats["best_auc"], auc)
+
+                stats["experiments"].append({
+                    "experiment_id": exp.get("experiment_id"),
+                    "auc": auc,
+                    "cycle_id": exp.get("cycle_id")
+                })
+            else:
+                stats["failed"] += 1
+
+        # Compute averages
+        for family, stats in family_stats.items():
+            if stats["avg_auc"]:
+                stats["avg_auc"] = sum(stats["avg_auc"]) / len(stats["avg_auc"])
+            else:
+                stats["avg_auc"] = 0.0
+
+        return family_stats
 
     def _update_history_summary(
         self,
