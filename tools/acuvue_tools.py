@@ -339,6 +339,88 @@ def _compute_directory_checksum(directory: Path) -> str:
     return md5_hash.hexdigest()
 
 
+def prepare_fused_dataset(
+    fusion_config_path: str,
+    cycle_id: int
+) -> Dict[str, Any]:
+    """
+    Prepare fused dataset for multi-dataset training.
+
+    Args:
+        fusion_config_path: Path to fusion configuration file
+        cycle_id: Current research cycle
+
+    Returns:
+        Dict with fusion preparation results
+
+    Raises:
+        PreprocessingError: If fusion preparation fails
+    """
+    logger.info(f"Preparing fused dataset from config: {fusion_config_path}")
+
+    try:
+        from tools.dataset_fusion import DatasetFusion, FusionConfig
+        import json
+
+        # Load fusion config
+        with open(fusion_config_path, 'r') as f:
+            fusion_data = json.load(f)
+
+        if not fusion_data.get("fusion_enabled", False):
+            raise PreprocessingError("Fusion not enabled in config")
+
+        # Extract configuration
+        datasets_config = fusion_data.get("datasets", [])
+        if not datasets_config:
+            raise PreprocessingError("No datasets specified in fusion config")
+
+        dataset_ids = [d["dataset_id"] for d in datasets_config]
+        fusion_weights = {d["dataset_id"]: d["weight"] for d in datasets_config}
+
+        harmonization = fusion_data.get("harmonization", {})
+        target_size = tuple(harmonization.get("target_size", [512, 512]))
+        harmonization_strategy = harmonization.get("strategy", "resize")
+
+        cross_dataset_validation = fusion_data.get("cross_dataset_validation", False)
+        validation_dataset = None
+        if cross_dataset_validation:
+            for d in datasets_config:
+                if d.get("validation_only", False):
+                    validation_dataset = d["dataset_id"]
+                    break
+
+        # Create fusion config
+        fusion_config = FusionConfig(
+            dataset_ids=dataset_ids,
+            fusion_weights=fusion_weights,
+            harmonization_strategy=harmonization_strategy,
+            target_size=target_size,
+            cross_dataset_validation=cross_dataset_validation,
+            validation_dataset=validation_dataset
+        )
+
+        # Initialize fusion
+        fusion = DatasetFusion(fusion_config)
+
+        # Load datasets
+        fusion_result = fusion.load_datasets()
+
+        logger.info(f"Fused dataset prepared: {fusion_result['total_samples']} total samples")
+
+        return {
+            "status": "success",
+            "fusion_config": fusion_config_path,
+            "datasets": fusion_result["datasets"],
+            "total_samples": fusion_result["total_samples"],
+            "sampling_weights": fusion.get_sampling_weights(),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+    except Exception as e:
+        logger.error(f"Fused dataset preparation failed: {e}")
+        raise PreprocessingError(f"Fusion failed: {str(e)}") from e
+
+
 # ============================================================================
 # Training Job Tools
 # ============================================================================
