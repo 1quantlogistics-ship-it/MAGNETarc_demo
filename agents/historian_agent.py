@@ -12,6 +12,7 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 from agents.base import BaseAgent, AgentCapability
 from llm.router import LLMRouter
+from tools.world_model import get_world_model
 
 
 class HistorianAgent(BaseAgent):
@@ -45,6 +46,9 @@ class HistorianAgent(BaseAgent):
             memory_path=memory_path
         )
         self.llm_router = llm_router or LLMRouter(offline_mode=True)
+
+        # Initialize world model for outcome prediction
+        self.world_model = get_world_model(model_path=str(Path(memory_path) / "world_model"))
 
     def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -86,6 +90,9 @@ class HistorianAgent(BaseAgent):
                 self.write_memory("history_summary.json", response.get("history", {}))
                 self.write_memory("constraints.json", response.get("constraints", {}))
 
+                # Update world model with new experiment results
+                self._update_world_model(new_results, input_data.get("cycle_id", 0))
+
                 # Track success
                 duration_ms = (time.time() - start_time) * 1000
                 self._track_task("update_history", success=True, duration_ms=duration_ms)
@@ -104,6 +111,9 @@ class HistorianAgent(BaseAgent):
                 # Write to memory
                 self.write_memory("history_summary.json", response.get("history", {}))
                 self.write_memory("constraints.json", response.get("constraints", {}))
+
+                # Update world model with new experiment results
+                self._update_world_model(new_results, input_data.get("cycle_id", 0))
 
                 # Track success with fallback flag
                 duration_ms = (time.time() - start_time) * 1000
@@ -584,3 +594,92 @@ Return ONLY a valid JSON object:
     "safe_baselines": [...]
   }}
 }}"""
+
+    def _update_world_model(self, new_results: List[Dict[str, Any]], cycle_id: int) -> None:
+        """
+        Update world model with new experiment results.
+
+        Args:
+            new_results: List of experiment results
+            cycle_id: Current research cycle ID
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+
+        for result in new_results:
+            try:
+                # Extract config and metrics
+                config = result.get("config", {})
+                metrics = result.get("metrics", {})
+                experiment_id = result.get("experiment_id", "unknown")
+
+                # Extract target metric (AUC)
+                observed_metric = metrics.get("auc", 0.0)
+
+                # Skip if no valid metric
+                if observed_metric == 0.0:
+                    continue
+
+                # Update world model
+                update_result = self.world_model.update(
+                    config=config,
+                    observed_metric=observed_metric,
+                    cycle_id=cycle_id,
+                    experiment_id=experiment_id
+                )
+
+                if update_result.success:
+                    logger.info(
+                        f"World model updated with {experiment_id}: "
+                        f"AUC={observed_metric:.4f}, "
+                        f"total_samples={update_result.total_samples}"
+                    )
+                else:
+                    logger.warning(f"World model update failed for {experiment_id}")
+
+            except Exception as e:
+                logger.warning(f"Failed to update world model with result: {e}")
+
+    def predict_proposal_outcome(self, proposal: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Predict outcome of a proposal using world model.
+
+        Args:
+            proposal: Agent proposal with config
+
+        Returns:
+            Dict with prediction results
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+
+        try:
+            config = proposal.get("config", {})
+
+            # Get world model prediction
+            prediction = self.world_model.predict(config, optimize_for="auc")
+
+            logger.debug(
+                f"World model prediction for {proposal.get('experiment_id')}: "
+                f"AUC={prediction.predicted_metric:.4f}, "
+                f"confidence={prediction.confidence:.2f}, "
+                f"uncertainty={prediction.uncertainty:.4f}"
+            )
+
+            return {
+                "predicted_auc": prediction.predicted_metric,
+                "confidence": prediction.confidence,
+                "uncertainty": prediction.uncertainty,
+                "confidence_interval": prediction.confidence_interval,
+                "expected_improvement": prediction.expected_improvement,
+                "details": prediction.details
+            }
+
+        except Exception as e:
+            logger.warning(f"World model prediction failed: {e}")
+            return {
+                "predicted_auc": 0.5,
+                "confidence": 0.0,
+                "uncertainty": 1.0,
+                "error": str(e)
+            }
