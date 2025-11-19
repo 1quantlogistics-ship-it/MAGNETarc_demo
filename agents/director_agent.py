@@ -4,6 +4,11 @@ DirectorAgent: Strategic planning and mode control
 
 The Director sets research strategy, allocates budgets, and determines
 when to explore vs exploit.
+
+Phase E Enhancements:
+- Curriculum learning control (Task 2.5)
+- Adaptive curriculum pacing based on performance
+- Curriculum stage progression decisions
 """
 
 from typing import Dict, Any, List, Optional
@@ -16,6 +21,15 @@ try:
     HISTORIAN_AVAILABLE = True
 except ImportError:
     HISTORIAN_AVAILABLE = False
+
+# Phase E: Curriculum strategy support (Task 2.5)
+try:
+    from schemas.curriculum_strategy import (
+        CurriculumStrategy, PacingStrategy, DifficultyMetric
+    )
+    CURRICULUM_STRATEGY_AVAILABLE = True
+except ImportError:
+    CURRICULUM_STRATEGY_AVAILABLE = False
 
 
 class DirectorAgent(BaseAgent):
@@ -320,3 +334,181 @@ Return ONLY a valid JSON object with this structure:
             "strategy_type": directive.get("strategy_type", "llm_based"),
             "metrics": directive.get("metrics", {})
         }
+
+    def decide_curriculum_progression(
+        self,
+        curriculum: CurriculumStrategy,
+        current_stage_id: int,
+        current_epoch: int,
+        validation_metrics: Dict[str, float]
+    ) -> Dict[str, Any]:
+        """
+        Decide whether to progress to next curriculum stage.
+
+        Phase E: Task 2.5 - Director controls curriculum learning progression
+        based on performance and pacing strategy.
+
+        Args:
+            curriculum: Active curriculum strategy
+            current_stage_id: Current curriculum stage (0-indexed)
+            current_epoch: Current epoch within stage
+            validation_metrics: Recent validation metrics (auc, sensitivity, specificity)
+
+        Returns:
+            Decision dict with progression action and reasoning
+        """
+        if not CURRICULUM_STRATEGY_AVAILABLE:
+            raise RuntimeError("Curriculum strategy schema not available")
+
+        # Get current stage
+        if current_stage_id >= len(curriculum.stages):
+            return {
+                "action": "complete",
+                "reasoning": "Curriculum complete - all stages finished",
+                "next_stage_id": None
+            }
+
+        current_stage = curriculum.stages[current_stage_id]
+
+        # Check 1: Minimum epochs requirement
+        if current_epoch < current_stage.min_epochs:
+            return {
+                "action": "continue",
+                "reasoning": f"Stage {current_stage_id} requires min {current_stage.min_epochs} epochs (currently {current_epoch})",
+                "next_stage_id": current_stage_id
+            }
+
+        # Check 2: Maximum epochs limit (if set)
+        if current_stage.max_epochs and current_epoch >= current_stage.max_epochs:
+            return {
+                "action": "progress",
+                "reasoning": f"Stage {current_stage_id} max epochs ({current_stage.max_epochs}) reached",
+                "next_stage_id": current_stage_id + 1
+            }
+
+        # Check 3: Progression criterion (if set)
+        if current_stage.progression_criterion:
+            criterion_met = True
+            for metric_name, threshold in current_stage.progression_criterion.items():
+                actual_value = validation_metrics.get(metric_name, 0.0)
+
+                if actual_value < threshold:
+                    criterion_met = False
+                    break
+
+            if criterion_met:
+                return {
+                    "action": "progress",
+                    "reasoning": f"Stage {current_stage_id} progression criteria met: {current_stage.progression_criterion}",
+                    "next_stage_id": current_stage_id + 1,
+                    "metrics": validation_metrics
+                }
+            else:
+                return {
+                    "action": "continue",
+                    "reasoning": f"Stage {current_stage_id} progression criteria not met yet",
+                    "next_stage_id": current_stage_id,
+                    "metrics": validation_metrics
+                }
+
+        # Check 4: Clinical safety constraint (sensitivity threshold)
+        sensitivity = validation_metrics.get("sensitivity", 0.0)
+        if sensitivity < curriculum.min_sensitivity_threshold:
+            return {
+                "action": "halt",
+                "reasoning": f"Sensitivity ({sensitivity:.3f}) below minimum threshold ({curriculum.min_sensitivity_threshold:.3f})",
+                "next_stage_id": current_stage_id,
+                "safety_violation": True
+            }
+
+        # Default: Continue current stage (no criteria specified)
+        return {
+            "action": "continue",
+            "reasoning": f"Stage {current_stage_id} in progress (no progression criteria)",
+            "next_stage_id": current_stage_id
+        }
+
+    def compute_curriculum_pacing(
+        self,
+        curriculum: CurriculumStrategy,
+        total_epochs_planned: int
+    ) -> List[int]:
+        """
+        Compute epoch boundaries for each curriculum stage based on pacing strategy.
+
+        Phase E: Task 2.5 - Translate pacing strategy into concrete epoch schedule.
+
+        Args:
+            curriculum: Curriculum strategy with pacing config
+            total_epochs_planned: Total training epochs planned
+
+        Returns:
+            List of epoch boundaries for each stage (e.g., [0, 5, 15, 30] for 3 stages)
+        """
+        if not CURRICULUM_STRATEGY_AVAILABLE:
+            raise RuntimeError("Curriculum strategy schema not available")
+
+        num_stages = len(curriculum.stages)
+        pacing_strategy = curriculum.pacing_strategy
+        pacing_params = curriculum.pacing_params or {}
+
+        boundaries = [0]  # Start at epoch 0
+
+        if pacing_strategy == PacingStrategy.LINEAR:
+            # Equal epochs per stage
+            epochs_per_stage = total_epochs_planned // num_stages
+
+            for i in range(1, num_stages):
+                boundaries.append(i * epochs_per_stage)
+
+            boundaries.append(total_epochs_planned)
+
+        elif pacing_strategy == PacingStrategy.EXPONENTIAL:
+            # Accelerating progression (more epochs in later stages)
+            import math
+
+            for i in range(1, num_stages):
+                # Exponential growth
+                fraction = (math.exp(i / num_stages) - 1) / (math.e - 1)
+                boundary = int(fraction * total_epochs_planned)
+                boundaries.append(boundary)
+
+            boundaries.append(total_epochs_planned)
+
+        elif pacing_strategy == PacingStrategy.ROOT:
+            # Decelerating progression (more epochs in early stages)
+            import math
+
+            for i in range(1, num_stages):
+                # Square root growth
+                fraction = math.sqrt(i / num_stages)
+                boundary = int(fraction * total_epochs_planned)
+                boundaries.append(boundary)
+
+            boundaries.append(total_epochs_planned)
+
+        elif pacing_strategy == PacingStrategy.STEP:
+            # Discrete jumps at predefined epochs
+            step_epochs = pacing_params.get("step_epochs", [])
+
+            if len(step_epochs) != num_stages - 1:
+                raise ValueError(
+                    f"Step pacing requires {num_stages - 1} step_epochs, got {len(step_epochs)}"
+                )
+
+            boundaries.extend(step_epochs)
+            boundaries.append(total_epochs_planned)
+
+        elif pacing_strategy == PacingStrategy.ADAPTIVE:
+            # Adaptive pacing (boundaries computed at runtime based on performance)
+            # Return minimum epochs per stage as placeholder
+            for stage in curriculum.stages:
+                boundaries.append(boundaries[-1] + stage.min_epochs)
+
+        else:
+            # Default to linear
+            epochs_per_stage = total_epochs_planned // num_stages
+            for i in range(1, num_stages + 1):
+                boundaries.append(i * epochs_per_stage)
+
+        return boundaries[:num_stages + 1]  # Ensure correct length

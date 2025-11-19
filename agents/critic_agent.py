@@ -28,6 +28,15 @@ try:
 except ImportError:
     AUGMENTATION_POLICY_AVAILABLE = False
 
+# Phase E: Loss configuration validation (Task 2.2)
+try:
+    from schemas.loss_config import (
+        LossConfig, validate_loss_safety
+    )
+    LOSS_CONFIG_AVAILABLE = True
+except ImportError:
+    LOSS_CONFIG_AVAILABLE = False
+
 
 class CriticAgent(BaseAgent):
     """
@@ -190,6 +199,41 @@ class CriticAgent(BaseAgent):
                     "confidence": 0.90,
                     "reasoning": f"Invalid augmentation policy: {str(e)}",
                     "suggested_changes": "Fix policy syntax or validation errors"
+                }
+
+        # Phase E Task 2.2: Validate loss configuration if present
+        if LOSS_CONFIG_AVAILABLE and "loss_config" in config_changes:
+            try:
+                # Parse loss config from config
+                loss_dict = config_changes["loss_config"]
+                loss_config = LossConfig(**loss_dict)
+
+                # Validate clinical safety
+                is_valid, error_msg = validate_loss_safety(loss_config)
+
+                if not is_valid:
+                    return {
+                        "decision": "reject",
+                        "confidence": 0.95,
+                        "reasoning": f"Loss configuration safety validation failed: {error_msg}",
+                        "suggested_changes": "Revise loss config to meet clinical safety constraints"
+                    }
+
+                # Additional primary weight check
+                if loss_config.primary_weight < 0.6:
+                    return {
+                        "decision": "reject",
+                        "confidence": 0.98,
+                        "reasoning": f"Primary loss weight ({loss_config.primary_weight:.2f}) too low. Classification must remain primary goal (≥ 0.6).",
+                        "suggested_changes": "Increase primary_weight to ≥ 0.6"
+                    }
+
+            except Exception as e:
+                return {
+                    "decision": "reject",
+                    "confidence": 0.90,
+                    "reasoning": f"Invalid loss configuration: {str(e)}",
+                    "suggested_changes": "Fix loss config syntax or validation errors"
                 }
 
         # Check for forbidden parameter ranges
