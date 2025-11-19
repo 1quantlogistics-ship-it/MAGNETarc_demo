@@ -135,12 +135,12 @@ All logs written in dual format:
 
 ### FDA Compliance Features
 
-✅ **Traceability**: Every decision tracked from proposal to result
-✅ **Structured Iteration**: Cycle-by-cycle progression documented
-✅ **Controlled Changes**: Git commits + system snapshots
-✅ **Reproducibility**: Full config + checksums captured
-✅ **Process Awareness**: Agent reasoning and decisions logged
-✅ **Risk Awareness**: Timeouts, crashes, vetoes tracked
+ **Traceability**: Every decision tracked from proposal to result
+ **Structured Iteration**: Cycle-by-cycle progression documented
+ **Controlled Changes**: Git commits + system snapshots
+ **Reproducibility**: Full config + checksums captured
+ **Process Awareness**: Agent reasoning and decisions logged
+ **Risk Awareness**: Timeouts, crashes, vetoes tracked
 
 **Note**: This is *lightweight documentation* showing professional development, NOT full QMS/DHF/ISO compliance. Demonstrates methodical approach and traceability for regulatory review.
 
@@ -337,7 +337,7 @@ ARC uses file-based JSON protocol for all agent communication:
 - Full research loop complete
 
 ### Phase D (v1.1.0-alpha)
-✅ **Multi-Agent Infrastructure** - COMPLETE
+ **Multi-Agent Infrastructure** - COMPLETE
 - 9 specialized agent classes implemented
 - Agent registry and discovery system
 - Democratic voting mechanism
@@ -346,7 +346,7 @@ ARC uses file-based JSON protocol for all agent communication:
 - Enhanced dashboard (8 tabs)
 - Configuration system (YAML)
 
-✅ **Production Enhancements** - COMPLETE
+ **Production Enhancements** - COMPLETE
 - FDA-aligned development logging
 - Role-specific timeout support (Historian 600s)
 - Data provenance tracking with checksums
