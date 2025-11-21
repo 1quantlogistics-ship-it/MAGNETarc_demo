@@ -25,8 +25,8 @@ except ImportError:
     TORCH_AVAILABLE = False
     print("Warning: PyTorch not available. Parallel physics engine will use CPU fallback.")
 
-from hull_parameters import HullParameters
-from physics_engine import PhysicsEngine, PhysicsResults, WATER_DENSITY, GRAVITY, KINEMATIC_VISCOSITY, AIR_DENSITY, KNOTS_TO_MS
+from naval_domain.hull_parameters import HullParameters
+from naval_domain.physics_engine import PhysicsEngine, PhysicsResults, WATER_DENSITY, GRAVITY, KINEMATIC_VISCOSITY, AIR_DENSITY, KNOTS_TO_MS
 
 
 class ParallelPhysicsEngine:
