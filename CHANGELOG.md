@@ -11,6 +11,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Autonomous 5-cycle validation capability
 - State persistence for orchestrator (resume capability)
 - Experiment history flattening for agent compatibility
+- **Enhanced CLI Features** (TASK 2.3):
+  - `--visualize` flag for automatic visualization generation
+  - `--export-html PATH` for custom dashboard location
+  - `--auto-open` flag to automatically open dashboard in browser
+  - `--metrics-report` flag for detailed performance summary
+  - `--resume STATE_FILE` for continuing previous research sessions
+  - `--save-state-every N` for configurable state persistence
+  - `--watch` mode for continuous autonomous operation
+  - Comprehensive CLI_GUIDE.md user documentation
 
 ### Fixed
 - **Critical**: Fixed baseline design bug causing NoneType error in first cycle
