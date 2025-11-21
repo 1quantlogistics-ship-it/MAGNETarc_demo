@@ -14,13 +14,13 @@ ARC (Autonomous Research Collective) is a **multi-agent autonomous ML research f
 
 ### What's New in Version 1.2.0 (Phase E)
 
-🎉 **19 new advanced ML capabilities** added in Phase E:
+ **19 new advanced ML capabilities** added in Phase E:
 
-- ✅ **Architecture Grammar & NAS** - Neural Architecture Search with constraint validation
-- ✅ **Augmentation Policy Learning** - AutoAugment with 14 safe operations
-- ✅ **Loss Engineering** - Focal loss, multi-task learning, class weighting
-- ✅ **Curriculum Learning** - Progressive difficulty with 4 pacing strategies
-- ✅ **Multi-Objective Optimization** - Pareto frontier tracking with hypervolume metrics
+-  **Architecture Grammar & NAS** - Neural Architecture Search with constraint validation
+-  **Augmentation Policy Learning** - AutoAugment with 14 safe operations
+-  **Loss Engineering** - Focal loss, multi-task learning, class weighting
+-  **Curriculum Learning** - Progressive difficulty with 4 pacing strategies
+-  **Multi-Objective Optimization** - Pareto frontier tracking with hypervolume metrics
 
 **Phase E Stats:**
 - 5,500+ lines of production code
@@ -40,19 +40,19 @@ ARC (Autonomous Research Collective) is a **multi-agent autonomous ML research f
 - 🐳 **RunPod Deployment** - Production Docker with GPU support
 
 **Advanced Experiment Design (Phase E):**
-- 🏗️ **Architecture Search (NAS)** - Random, evolutionary, ENAS, DARTS strategies
-- 🔄 **Augmentation Policy** - AutoAugment with FDA-safe operations
-- ⚖️ **Loss Engineering** - Focal, Dice, Tversky, multi-task learning
-- 📈 **Curriculum Learning** - Progressive training from easy to hard
-- 🎯 **Multi-Objective Optimization** - Pareto frontier with hypervolume tracking
+-  **Architecture Search (NAS)** - Random, evolutionary, ENAS, DARTS strategies
+-  **Augmentation Policy** - AutoAugment with FDA-safe operations
+-  **Loss Engineering** - Focal, Dice, Tversky, multi-task learning
+-  **Curriculum Learning** - Progressive training from easy to hard
+-  **Multi-Objective Optimization** - Pareto frontier with hypervolume tracking
 
 **Infrastructure:**
-- 🔒 **Safety-First Design** - SEMI/AUTO/FULL autonomy modes
-- 📁 **File-Based Protocol** - JSON inter-agent communication
-- 🔬 **Real GPU Training** - PyTorch integration with experiment tracking
-- 📊 **Enhanced Dashboard** - 8 tabs with real-time monitoring
-- 💾 **Snapshot & Rollback** - State preservation and restoration
-- 🌐 **Offline Operation** - Full functionality without network (mock mode)
+-  **Safety-First Design** - SEMI/AUTO/FULL autonomy modes
+-  **File-Based Protocol** - JSON inter-agent communication
+-  **Real GPU Training** - PyTorch integration with experiment tracking
+-  **Enhanced Dashboard** - 8 tabs with real-time monitoring
+-  **Snapshot & Rollback** - State preservation and restoration
+-  **Offline Operation** - Full functionality without network (mock mode)
 
 ---
 
