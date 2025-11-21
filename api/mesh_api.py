@@ -8,18 +8,21 @@ Endpoints:
 1. GET /api/mesh/{design_id} → Serve STL file
 2. GET /api/meshes/list → List available meshes with pagination
 3. GET /api/mesh/{design_id}/metadata → Get mesh metadata
+4. WebSocket /ws/meshes → Real-time mesh updates (Task 3.5)
 
 Author: Agent 3 (3D Visualization Lead)
 Task: 3.3 - Mesh Serving API
+Task: 3.5 - WebSocket Real-Time Updates
 Date: 2025-11-20
 """
 
 import json
+import asyncio
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Set
 from datetime import datetime
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -175,6 +178,107 @@ def get_mesh_files(directory: Path, limit: int = 100, offset: int = 0) -> List[P
 
     # Apply pagination
     return mesh_files[offset:offset + limit]
+
+
+# ============================================================
+# WebSocket Connection Manager (Task 3.5)
+# ============================================================
+
+class ConnectionManager:
+    """Manages WebSocket connections for real-time mesh updates."""
+
+    def __init__(self):
+        self.active_connections: Set[WebSocket] = set()
+        self._known_meshes: Set[str] = set()
+        self._monitoring = False
+        self._monitor_task = None
+
+    async def connect(self, websocket: WebSocket):
+        """Accept and store a new WebSocket connection."""
+        await websocket.accept()
+        self.active_connections.add(websocket)
+
+        # Start monitoring if this is the first connection
+        if len(self.active_connections) == 1 and not self._monitoring:
+            self._monitor_task = asyncio.create_task(self._monitor_mesh_directory())
+
+    def disconnect(self, websocket: WebSocket):
+        """Remove a WebSocket connection."""
+        self.active_connections.discard(websocket)
+
+        # Stop monitoring if no more connections
+        if len(self.active_connections) == 0 and self._monitoring:
+            self._monitoring = False
+            if self._monitor_task:
+                self._monitor_task.cancel()
+
+    async def broadcast(self, message: Dict[str, Any]):
+        """Broadcast message to all connected clients."""
+        disconnected = set()
+
+        for connection in self.active_connections:
+            try:
+                await connection.send_json(message)
+            except Exception:
+                disconnected.add(connection)
+
+        # Clean up disconnected clients
+        for connection in disconnected:
+            self.disconnect(connection)
+
+    async def _monitor_mesh_directory(self):
+        """Monitor mesh directory for new files and broadcast updates."""
+        self._monitoring = True
+
+        # Initialize known meshes
+        if MESH_DIR.exists():
+            self._known_meshes = {f.stem for f in MESH_DIR.glob("*.stl")}
+
+        print(f"[WebSocket] Monitoring {MESH_DIR} for new meshes...")
+
+        try:
+            while self._monitoring:
+                await asyncio.sleep(1)  # Check every second
+
+                if not MESH_DIR.exists():
+                    continue
+
+                # Get current meshes
+                current_meshes = {f.stem for f in MESH_DIR.glob("*.stl")}
+
+                # Check for new meshes
+                new_meshes = current_meshes - self._known_meshes
+
+                if new_meshes:
+                    for design_id in new_meshes:
+                        mesh_path = MESH_DIR / f"{design_id}.stl"
+                        stat = mesh_path.stat()
+
+                        # Broadcast new mesh event
+                        await self.broadcast({
+                            "event": "new_mesh",
+                            "design_id": design_id,
+                            "file_size": stat.st_size,
+                            "created_at": stat.st_mtime,
+                            "url": f"/api/mesh/{design_id}",
+                            "metadata_url": f"/api/mesh/{design_id}/metadata"
+                        })
+
+                        print(f"[WebSocket] Broadcasted new mesh: {design_id}")
+
+                    # Update known meshes
+                    self._known_meshes = current_meshes
+
+        except asyncio.CancelledError:
+            print("[WebSocket] Monitoring stopped")
+        except Exception as e:
+            print(f"[WebSocket] Error in monitoring: {e}")
+        finally:
+            self._monitoring = False
+
+
+# Global connection manager
+manager = ConnectionManager()
 
 
 # ============================================================
@@ -396,6 +500,61 @@ async def get_mesh_stats():
 
 
 # ============================================================
+# WebSocket Endpoint (Task 3.5)
+# ============================================================
+
+@app.websocket("/ws/meshes")
+async def websocket_endpoint(websocket: WebSocket):
+    """
+    WebSocket endpoint for real-time mesh updates.
+
+    Clients connect to this endpoint to receive notifications when new
+    meshes are generated and added to the mesh directory.
+
+    Events sent to clients:
+    - new_mesh: When a new mesh file is detected
+    - connection_ack: When client successfully connects
+
+    Example client code:
+    ```javascript
+    const ws = new WebSocket('ws://localhost:8000/ws/meshes');
+    ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (data.event === 'new_mesh') {
+            console.log('New mesh:', data.design_id);
+            // Refresh mesh list or load new mesh
+        }
+    };
+    ```
+    """
+    await manager.connect(websocket)
+
+    try:
+        # Send connection acknowledgement
+        await websocket.send_json({
+            "event": "connection_ack",
+            "message": "Connected to mesh update stream",
+            "active_connections": len(manager.active_connections)
+        })
+
+        # Keep connection alive and wait for disconnect
+        while True:
+            # Receive messages from client (for heartbeat/ping)
+            data = await websocket.receive_text()
+
+            # Echo back for heartbeat
+            if data == "ping":
+                await websocket.send_json({"event": "pong"})
+
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+        print(f"[WebSocket] Client disconnected. Active connections: {len(manager.active_connections)}")
+    except Exception as e:
+        print(f"[WebSocket] Error: {e}")
+        manager.disconnect(websocket)
+
+
+# ============================================================
 # Main (for standalone testing)
 # ============================================================
 
@@ -409,11 +568,12 @@ if __name__ == "__main__":
     print("Starting server on http://localhost:8000")
     print()
     print("Available endpoints:")
-    print("  GET  /api/mesh/{design_id}")
-    print("  GET  /api/meshes/list")
-    print("  GET  /api/mesh/{design_id}/metadata")
-    print("  GET  /api/meshes/recent")
-    print("  GET  /api/meshes/stats")
+    print("  GET        /api/mesh/{design_id}")
+    print("  GET        /api/meshes/list")
+    print("  GET        /api/mesh/{design_id}/metadata")
+    print("  GET        /api/meshes/recent")
+    print("  GET        /api/meshes/stats")
+    print("  WebSocket  /ws/meshes  (real-time updates)")
     print()
     print("Documentation: http://localhost:8000/docs")
     print("=" * 70)
