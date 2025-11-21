@@ -789,7 +789,7 @@ class PhysicsEngine:
 
 # === CONVENIENCE FUNCTION ===
 
-def simulate_design(hull_params: HullParameters, verbose: bool = False, generate_mesh: bool = True) -> PhysicsResults:
+def simulate_design(hull_params: HullParameters, verbose: bool = False, generate_mesh: bool = True, demo_mode: bool = False) -> PhysicsResults:
     """
     Convenience function to simulate a single design with optional 3D mesh generation.
 
@@ -797,6 +797,7 @@ def simulate_design(hull_params: HullParameters, verbose: bool = False, generate
         hull_params: Hull parameters to simulate
         verbose: Enable verbose output
         generate_mesh: If True, generate and save 3D mesh (Task 3.1 integration)
+        demo_mode: If True, use higher resolution meshes for demos (default: False)
 
     Returns:
         PhysicsResults: Simulation results (includes mesh_path and design_id if generated)
@@ -816,8 +817,13 @@ def simulate_design(hull_params: HullParameters, verbose: bool = False, generate
             mesh_dir = Path("outputs/meshes/current")
             mesh_dir.mkdir(parents=True, exist_ok=True)
 
-            # Generate 3D mesh
-            generator = HullGenerator(num_cross_sections=50, points_per_section=30)
+            # Generate 3D mesh (use higher resolution for demos)
+            if demo_mode:
+                # Demo mode: Higher resolution for better visual quality
+                generator = HullGenerator(num_cross_sections=80, points_per_section=48)
+            else:
+                # Normal mode: Standard resolution for performance
+                generator = HullGenerator(num_cross_sections=50, points_per_section=30)
             mesh_data = generator.generate(hull_params)
             mesh = mesh_data['mesh']
             mesh_metadata = mesh_data['mesh_metadata']

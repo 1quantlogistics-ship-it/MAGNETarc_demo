@@ -9,6 +9,7 @@ Usage:
     python3 run_magnet.py --cycles 10 --mock
     python3 run_magnet.py --cycles 5 --gpu
     python3 run_magnet.py --resume
+    python3 run_magnet.py --cycles 5 --mock --demo-mode --live-render
 
 Author: Agent 2
 """
@@ -183,6 +184,9 @@ Examples:
   # Run 10 cycles with visualizations
   python run_magnet.py --cycles 10 --mock --visualize --auto-open
 
+  # Demo mode with high-quality 3D rendering
+  python run_magnet.py --cycles 5 --mock --demo-mode --live-render
+
   # Continuous monitoring with metrics
   python run_magnet.py --watch --metrics-report
 
@@ -265,6 +269,18 @@ Examples:
         "--watch",
         action="store_true",
         help="Run continuously, watching for new experiments"
+    )
+
+    # NEW: 3D Rendering and Demo arguments
+    parser.add_argument(
+        "--demo-mode",
+        action="store_true",
+        help="Enable enhanced 3D mesh rendering for demos (higher resolution)"
+    )
+    parser.add_argument(
+        "--live-render",
+        action="store_true",
+        help="Enable real-time 3D rendering during execution"
     )
 
     args = parser.parse_args()

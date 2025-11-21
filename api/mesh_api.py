@@ -8,7 +8,8 @@ Endpoints:
 1. GET /api/mesh/{design_id} → Serve STL file
 2. GET /api/meshes/list → List available meshes with pagination
 3. GET /api/mesh/{design_id}/metadata → Get mesh metadata
-4. WebSocket /ws/meshes → Real-time mesh updates (Task 3.5)
+4. GET /api/meshes/compare → Compare two designs side-by-side
+5. WebSocket /ws/meshes → Real-time mesh updates (Task 3.5)
 
 Author: Agent 3 (3D Visualization Lead)
 Task: 3.3 - Mesh Serving API
@@ -450,6 +451,64 @@ async def get_mesh_metadata(design_id: str):
                 status_code=500,
                 detail=f"Failed to load mesh metadata: {str(e)}"
             )
+
+
+@app.get("/api/meshes/compare")
+async def compare_designs(design_id_1: str = Query(..., description="First design ID"),
+                         design_id_2: str = Query(..., description="Second design ID")):
+    """
+    Compare two designs side-by-side.
+
+    Returns metadata for both designs for comparison.
+
+    Args:
+        design_id_1: First design to compare
+        design_id_2: Second design to compare
+
+    Returns:
+        Dictionary with metadata for both designs
+
+    Raises:
+        HTTPException: 404 if either design not found
+    """
+    # Get metadata for both designs
+    try:
+        # Fetch first design metadata
+        metadata_1 = await get_mesh_metadata(design_id_1)
+    except HTTPException as e:
+        raise HTTPException(
+            status_code=404,
+            detail=f"First design '{design_id_1}' not found: {e.detail}"
+        )
+
+    try:
+        # Fetch second design metadata
+        metadata_2 = await get_mesh_metadata(design_id_2)
+    except HTTPException as e:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Second design '{design_id_2}' not found: {e.detail}"
+        )
+
+    # Return comparison data
+    return {
+        "design_1": {
+            "design_id": design_id_1,
+            "metadata": metadata_1,
+            "url": f"/api/mesh/{design_id_1}"
+        },
+        "design_2": {
+            "design_id": design_id_2,
+            "metadata": metadata_2,
+            "url": f"/api/mesh/{design_id_2}"
+        },
+        "comparison": {
+            "vertex_count_diff": metadata_2.get("vertex_count", 0) - metadata_1.get("vertex_count", 0),
+            "face_count_diff": metadata_2.get("face_count", 0) - metadata_1.get("face_count", 0),
+            "volume_diff": metadata_2.get("volume", 0.0) - metadata_1.get("volume", 0.0),
+            "surface_area_diff": metadata_2.get("surface_area", 0.0) - metadata_1.get("surface_area", 0.0)
+        }
+    }
 
 
 @app.get("/api/meshes/recent")
