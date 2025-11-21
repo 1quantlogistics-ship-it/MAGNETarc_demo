@@ -21,16 +21,28 @@ from datetime import datetime
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from config import ARCSettings, reset_settings_cache
-from schemas import (
-    Directive, DirectiveMode, Objective, NoveltyBudget,
-    HistorySummary, BestMetrics, ExperimentRecord, PerformanceTrends,
-    Constraints, ForbiddenRange,
-    SystemState, OperatingMode,
-    Proposals, Proposal, NoveltyClass, ExpectedImpact, ResourceCost,
-    Reviews, Review, ReviewDecision,
-    TrendDirection
-)
+# Try to import legacy ARC components if available (for backwards compatibility)
+try:
+    from config import ARCSettings, reset_settings_cache
+    LEGACY_ARC_AVAILABLE = True
+except ImportError:
+    LEGACY_ARC_AVAILABLE = False
+    ARCSettings = None
+    reset_settings_cache = lambda: None
+
+try:
+    from schemas import (
+        Directive, DirectiveMode, Objective, NoveltyBudget,
+        HistorySummary, BestMetrics, ExperimentRecord, PerformanceTrends,
+        Constraints, ForbiddenRange,
+        SystemState, OperatingMode,
+        Proposals, Proposal, NoveltyClass, ExpectedImpact, ResourceCost,
+        Reviews, Review, ReviewDecision,
+        TrendDirection
+    )
+    LEGACY_SCHEMAS_AVAILABLE = True
+except ImportError:
+    LEGACY_SCHEMAS_AVAILABLE = False
 
 
 # ============================================================================
