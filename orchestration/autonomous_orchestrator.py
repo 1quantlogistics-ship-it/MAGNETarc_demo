@@ -185,11 +185,15 @@ class AutonomousOrchestrator:
             cycle_results["steps"]["supervisor"] = {"success": True, "strategy": supervisor_response.data.get("strategy_adjustment", {})}
             self.state.exploration_strategy = supervisor_response.data.get("strategy_adjustment", {})
 
-            # Persist
+            # Persist - extract just the results portion from simulation output
+            # Physics returns: [{"design_id": ..., "parameters": {...}, "results": {...}}]
+            # KB expects results as: [{"is_valid": True, "overall_score": 75.2, ...}]
+            results_only = [r.get("results", {}) for r in self.state.current_results]
+
             self.knowledge_base.add_experiment_results(
                 hypothesis=self.state.current_hypothesis,
                 designs=self.state.current_designs,
-                results=self.state.current_results,
+                results=results_only,
                 cycle_number=cycle_num
             )
 
