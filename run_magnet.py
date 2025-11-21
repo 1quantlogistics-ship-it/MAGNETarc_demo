@@ -85,11 +85,116 @@ def mock_physics_simulation(designs):
     return results
 
 
+async def _generate_visualizations(orchestrator, args, logger):
+    """Generate visualizations and optionally open in browser"""
+    from datetime import datetime
+    import webbrowser
+
+    logger.info("\n📊 Generating visualizations...")
+
+    kb = orchestrator.knowledge_base
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    # Determine HTML path
+    if args.export_html:
+        html_path = args.export_html
+    else:
+        html_path = f"results/dashboard_{timestamp}.html"
+
+    # Create results directory
+    Path("results").mkdir(exist_ok=True)
+
+    try:
+        # Generate HTML dashboard
+        kb.export_html_report(html_path)
+        logger.info(f"  ✅ Dashboard: {html_path}")
+
+        # Generate plots
+        kb.plot_improvement_over_time(f"results/improvement_{timestamp}.png")
+        logger.info(f"  ✅ Improvement plot: results/improvement_{timestamp}.png")
+
+        kb.visualize_design_space_2d(f"results/design_space_{timestamp}.png")
+        logger.info(f"  ✅ Design space plot: results/design_space_{timestamp}.png")
+
+        kb.visualize_pareto_frontier(f"results/pareto_{timestamp}.png")
+        logger.info(f"  ✅ Pareto frontier: results/pareto_{timestamp}.png")
+
+        # Auto-open dashboard if requested
+        if args.auto_open:
+            logger.info(f"\n🌐 Opening dashboard in browser...")
+            webbrowser.open(f"file://{Path(html_path).absolute()}")
+
+    except Exception as e:
+        logger.error(f"❌ Visualization generation failed: {e}")
+
+
+def _print_metrics_report(orchestrator, logger):
+    """Print comprehensive metrics report"""
+    state = orchestrator.state
+    kb = orchestrator.knowledge_base
+    stats = kb.get_statistics()
+
+    logger.info("\n" + "="*70)
+    logger.info(" 📈 MAGNET METRICS REPORT")
+    logger.info("="*70)
+
+    # Basic stats
+    logger.info(f"  Cycles completed:      {state.cycle_number}")
+    logger.info(f"  Total experiments:     {state.total_experiments}")
+    logger.info(f"  Valid designs:         {state.total_valid_designs} ({state.total_valid_designs/max(state.total_experiments,1)*100:.1f}%)")
+    logger.info(f"  Best score:            {state.best_overall_score:.2f}")
+
+    # Knowledge base stats
+    logger.info(f"\n  KB Statistics:")
+    logger.info(f"    Total experiments:   {stats['total_experiments']}")
+    logger.info(f"    Designs evaluated:   {stats['total_designs_evaluated']}")
+    logger.info(f"    Cycles tracked:      {stats['total_cycles']}")
+    logger.info(f"    Avg overall score:   {stats['avg_overall_score']:.2f}")
+    logger.info(f"    Hypotheses confirmed:{stats['successful_hypotheses']}")
+    logger.info(f"    Hypotheses refuted:  {stats['failed_hypotheses']}")
+
+    # Best designs
+    best_designs = kb.get_best_designs(n=3)
+    if best_designs:
+        logger.info(f"\n  Top 3 Designs:")
+        for i, design in enumerate(best_designs[:3], 1):
+            params = design.get("parameters", {})
+            results = design.get("results", {})
+            logger.info(f"    {i}. Score: {results.get('overall_score', 0):.2f}")
+            logger.info(f"       Length: {params.get('length_overall', 0):.1f}m, "
+                       f"Beam: {params.get('beam', 0):.1f}m, "
+                       f"Spacing: {params.get('hull_spacing', 0):.1f}m")
+
+    # Errors
+    if state.error_count > 0:
+        logger.info(f"\n  ⚠️  Errors encountered: {state.error_count}")
+        logger.info(f"      Last error: {state.last_error}")
+
+    logger.info("="*70)
+
+
 async def main():
     """Main entry point"""
     parser = argparse.ArgumentParser(
-        description="MAGNET Autonomous Naval Design Research System"
+        description="MAGNET Autonomous Naval Design Research System",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Run 10 cycles with visualizations
+  python run_magnet.py --cycles 10 --mock --visualize --auto-open
+
+  # Continuous monitoring with metrics
+  python run_magnet.py --watch --metrics-report
+
+  # Resume previous run
+  python run_magnet.py --resume memory/orchestrator_state.json --cycles 5
+
+  # Generate HTML dashboard
+  python run_magnet.py --cycles 5 --mock --export-html results/my_dashboard.html
+        """
     )
+
+    # Core arguments
     parser.add_argument(
         "--cycles",
         type=int,
@@ -113,6 +218,53 @@ async def main():
         default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
         help="Logging level"
+    )
+
+    # NEW: Visualization arguments
+    parser.add_argument(
+        "--visualize",
+        action="store_true",
+        help="Generate visualizations after run completes"
+    )
+    parser.add_argument(
+        "--export-html",
+        type=str,
+        metavar="PATH",
+        help="Export HTML dashboard to specified path"
+    )
+    parser.add_argument(
+        "--auto-open",
+        action="store_true",
+        help="Auto-open dashboard in browser (requires --visualize or --export-html)"
+    )
+
+    # NEW: Reporting arguments
+    parser.add_argument(
+        "--metrics-report",
+        action="store_true",
+        help="Print detailed metrics summary at end"
+    )
+
+    # NEW: State management arguments
+    parser.add_argument(
+        "--resume",
+        type=str,
+        metavar="STATE_FILE",
+        help="Resume from previous state file"
+    )
+    parser.add_argument(
+        "--save-state-every",
+        type=int,
+        default=1,
+        metavar="N",
+        help="Save state every N cycles (default: 1)"
+    )
+
+    # NEW: Monitoring arguments
+    parser.add_argument(
+        "--watch",
+        action="store_true",
+        help="Run continuously, watching for new experiments"
     )
 
     args = parser.parse_args()
@@ -155,24 +307,63 @@ async def main():
             physics_sim = mock_physics_simulation
 
     # Create orchestrator
+    config = {
+        "cycle_delay": 5,
+        "save_state_every": args.save_state_every
+    }
+
+    # Handle resume
+    if args.resume:
+        if not Path(args.resume).exists():
+            logger.error(f"❌ State file not found: {args.resume}")
+            return
+        config["state_file"] = args.resume
+        logger.info(f"✓ Resuming from {args.resume}")
+
     orchestrator = create_orchestrator(
         llm_client=llm_client,
         physics_simulator=physics_sim,
         memory_path=args.memory,
-        config={"cycle_delay": 5}
+        config=config
     )
 
     logger.info("✓ Orchestrator created")
+
+    if args.resume:
+        logger.info(f"   Starting at cycle {orchestrator.state.cycle_number + 1}")
+
     logger.info("\nStarting autonomous research loop...\n")
 
     # Run
     try:
-        await orchestrator.run(max_cycles=args.cycles)
+        if args.watch:
+            # Watch mode: run continuously
+            logger.info("👀 Watch mode: Running continuously...")
+            logger.info("   Press Ctrl+C to stop\n")
+            import time
+            while True:
+                await orchestrator.run_cycle()
+                if args.metrics_report:
+                    _print_metrics(orchestrator)
+                time.sleep(5)  # Brief pause between cycles
+        else:
+            # Normal mode: run specified cycles
+            await orchestrator.run(max_cycles=args.cycles)
+
     except KeyboardInterrupt:
         logger.info("\n⏸ Interrupted by user")
         orchestrator.stop()
 
+    # Post-run operations
     logger.info("\n✅ MAGNET session complete")
+
+    # Generate visualizations if requested
+    if args.visualize or args.export_html:
+        await _generate_visualizations(orchestrator, args, logger)
+
+    # Print metrics report if requested
+    if args.metrics_report:
+        _print_metrics_report(orchestrator, logger)
 
 
 if __name__ == "__main__":
