@@ -6,7 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-### Added
+### Added - v0.2.0
+- **Synthetic Data Generation System**:
+  - Physics-informed training data generation for ML models
+  - Multiple sampling strategies (Latin Hypercube, Gaussian, Edge/Corner, Mixed)
+  - Data augmentation with controlled noise (2-5x multiplier)
+  - Quality metrics (diversity score, parameter coverage, validity ratio)
+  - Multi-format export (NumPy, CSV, JSON)
+  - Comprehensive 450-line README with usage examples
+  - Full test suite with 100% pass rate
+- **Multi-Domain Design System** (design_core package):
+  - Domain-agnostic design abstractions
+  - BaseDesignParameters and BasePhysicsEngine interfaces
+  - Universal performance metrics (structural, efficiency, safety)
+  - Support for naval, aerial, ground vehicle, and structural domains
+
+### Added - v0.1.0
 - Supervisor Naval Agent for meta-learning and strategy adjustment
 - Autonomous 5-cycle validation capability
 - State persistence for orchestrator (resume capability)
