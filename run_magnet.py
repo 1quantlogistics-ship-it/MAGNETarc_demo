@@ -249,6 +249,13 @@ Examples:
         help="Print detailed metrics summary at end"
     )
 
+    # M48 mode argument
+    parser.add_argument(
+        "--m48-mode",
+        action="store_true",
+        help="Enable M48 mission mode (NAVSEA HC-MASC optimization with sea trial calibration)"
+    )
+
     # NEW: State management arguments
     parser.add_argument(
         "--resume",
@@ -296,9 +303,20 @@ Examples:
     logger.info("🚀 MAGNET AUTONOMOUS NAVAL DESIGN RESEARCH SYSTEM")
     logger.info("="*70)
     logger.info(f"Mode: {'MOCK (CPU-only)' if args.mock else 'GPU'}")
+    logger.info(f"M48 Mission Mode: {'ENABLED' if args.m48_mode else 'DISABLED'}")
     logger.info(f"Cycles: {args.cycles if args.cycles else 'Infinite'}")
     logger.info(f"Memory: {args.memory}")
     logger.info("="*70)
+
+    # Print M48 configuration if enabled
+    if args.m48_mode:
+        logger.info("\n🎯 M48 MISSION CONFIGURATION LOADED")
+        logger.info("  Platform: Magnet Defense M48 (48m catamaran)")
+        logger.info("  Program: NAVSEA HC-MASC (N00024-25-R-6314)")
+        logger.info("  Sea Trials: 32,000 NM validation data")
+        logger.info("  Objectives: Stability (40%), Efficiency (35%), Speed (25%)")
+        logger.info("  Research: Pareto frontier optimization for Navy proposal")
+        logger.info("="*70)
 
     # Create LLM client
     if args.mock:
@@ -325,7 +343,8 @@ Examples:
     # Create orchestrator
     config = {
         "cycle_delay": 5,
-        "save_state_every": args.save_state_every
+        "save_state_every": args.save_state_every,
+        "m48_mode": args.m48_mode  # Pass M48 mode to orchestrator
     }
 
     # Handle resume
