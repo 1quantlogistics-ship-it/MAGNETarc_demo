@@ -8,7 +8,6 @@ Defines agent configurations, model parameters, and system settings.
 
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, field
-from pydantic import BaseSettings
 import os
 
 
@@ -27,7 +26,8 @@ class AgentConfig:
 
 
 # System Configuration Classes
-class MAGNETSettings(BaseSettings):
+@dataclass
+class MAGNETSettings:
     """
     MAGNET system settings using Pydantic for validation.
 
