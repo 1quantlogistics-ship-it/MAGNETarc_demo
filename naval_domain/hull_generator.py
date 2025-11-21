@@ -1,45 +1,55 @@
 """
 Hull Generator for Twin-Hull (Catamaran) Vessels
 
-This module generates hull geometry metadata from HullParameters.
-For now, this is a simplified implementation that produces geometric
-characteristics without full 3D mesh generation.
+This module generates 3D hull meshes and geometry metadata from HullParameters.
+Uses Trimesh library for parametric mesh generation with consistent topology.
 
-Future enhancements could include:
-- 3D mesh generation (vertices, faces)
-- STL/OBJ export
-- Hull surface parametrization
-- Integration with CAD tools (Rhino, etc.)
+Features:
+- Parametric 3D mesh generation (vertices, faces)
+- Binary STL export
+- Level-of-Detail (LOD) mesh generation
+- Consistent topology for morphing animations
+- Hull geometry metadata calculation
 """
 
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Tuple, Optional
 import math
+import numpy as np
+import trimesh
 
-from hull_parameters import HullParameters
+from naval_domain.hull_parameters import HullParameters
 
 
 class HullGenerator:
     """
-    Generates hull geometry metadata from parameters.
+    Generates 3D meshes and geometry metadata for catamaran hulls.
 
-    This is a simplified generator that produces key geometric
-    characteristics without full 3D meshing. Suitable for rapid
-    design space exploration and physics simulation.
+    Uses parametric generation to create consistent topology across
+    different designs, enabling smooth morphing animations.
     """
 
-    def __init__(self, resolution: str = 'low'):
+    def __init__(self,
+                 num_cross_sections: int = 50,
+                 points_per_section: int = 30,
+                 generate_mesh: bool = True):
         """
-        Initialize hull generator.
+        Initialize hull generator with topology parameters.
 
         Args:
-            resolution: Mesh resolution ('low', 'medium', 'high')
-                       Currently unused, reserved for future 3D meshing
+            num_cross_sections: Number of hull slices (longitudinal)
+            points_per_section: Points around each cross-section
+            generate_mesh: If True, generate 3D meshes; if False, only metadata
+
+        Note: num_cross_sections and points_per_section must be consistent
+              across ALL meshes for morphing to work!
         """
-        self.resolution = resolution
+        self.num_cross_sections = num_cross_sections
+        self.points_per_section = points_per_section
+        self.generate_mesh = generate_mesh
 
     def generate(self, hull_params: HullParameters) -> Dict[str, Any]:
         """
-        Generate hull geometry metadata.
+        Generate hull geometry metadata and optionally 3D mesh.
 
         Args:
             hull_params: Hull parameters defining the design
@@ -49,6 +59,8 @@ class HullGenerator:
             {
                 'hull_type': 'twin_hull',
                 'n_hulls': 2,
+                'mesh': trimesh.Trimesh or None,
+                'mesh_metadata': {...} or None,
                 'waterline_properties': {...},
                 'volume_properties': {...},
                 'geometric_properties': {...},
@@ -61,10 +73,18 @@ class HullGenerator:
         # Validate parameters
         hull_params.validate()
 
+        # Generate 3D mesh if requested
+        mesh = None
+        mesh_metadata = None
+        if self.generate_mesh:
+            mesh, mesh_metadata = self._generate_3d_mesh(hull_params)
+
         # Generate metadata
         hull_data = {
             'hull_type': 'twin_hull',
             'n_hulls': 2,
+            'mesh': mesh,
+            'mesh_metadata': mesh_metadata,
             'waterline_properties': self._calculate_waterline_properties(hull_params),
             'volume_properties': self._calculate_volume_properties(hull_params),
             'geometric_properties': self._calculate_geometric_properties(hull_params),
@@ -73,6 +93,244 @@ class HullGenerator:
         }
 
         return hull_data
+
+    # ========================================================================
+    # 3D MESH GENERATION METHODS
+    # ========================================================================
+
+    def _generate_3d_mesh(self, hull_params: HullParameters) -> Tuple[trimesh.Trimesh, Dict[str, Any]]:
+        """
+        Generate complete 3D mesh from hull parameters.
+
+        Returns:
+            (mesh, metadata) tuple where mesh is a trimesh.Trimesh object
+        """
+        # Generate individual components
+        port_hull = self._generate_single_hull(hull_params, offset=-hull_params.hull_spacing/2)
+        starboard_hull = self._generate_single_hull(hull_params, offset=hull_params.hull_spacing/2)
+        deck = self._generate_deck_platform(hull_params)
+        superstructure = self._generate_superstructure(hull_params)
+
+        # Combine all parts
+        combined = trimesh.util.concatenate([
+            port_hull, starboard_hull, deck, superstructure
+        ])
+
+        # Center mesh at origin
+        combined.vertices -= combined.center_mass
+
+        # Calculate metadata
+        metadata = {
+            "vertex_count": len(combined.vertices),
+            "face_count": len(combined.faces),
+            "volume": float(combined.volume) if hasattr(combined, 'volume') else 0.0,
+            "surface_area": float(combined.area) if hasattr(combined, 'area') else 0.0,
+            "center_of_buoyancy": combined.center_mass.tolist(),
+            "bounds": combined.bounds.tolist(),
+            "is_watertight": bool(combined.is_watertight) if hasattr(combined, 'is_watertight') else False
+        }
+
+        return combined, metadata
+
+    def _generate_single_hull(self, hull_params: HullParameters, offset: float) -> trimesh.Trimesh:
+        """
+        Generate one hull of the catamaran.
+
+        Args:
+            hull_params: Hull design parameters
+            offset: Y-axis offset (+ for starboard, - for port)
+        """
+        sections = []
+
+        for i in range(self.num_cross_sections):
+            # Longitudinal position (0 = stern, 1 = bow)
+            x_ratio = i / (self.num_cross_sections - 1)
+            x = x_ratio * hull_params.length_overall
+
+            # Generate cross-section at this x position
+            section = self._generate_cross_section(hull_params, x_ratio, x, offset)
+            sections.append(section)
+
+        # Loft sections together into 3D surface
+        mesh = self._loft_sections(sections)
+
+        return mesh
+
+    def _generate_cross_section(self, hull_params: HullParameters,
+                                x_ratio: float, x: float,
+                                y_offset: float) -> np.ndarray:
+        """
+        Generate a single cross-section profile.
+
+        Args:
+            hull_params: Hull parameters
+            x_ratio: Normalized position along length (0=stern, 1=bow)
+            x: Actual x position in meters
+            y_offset: Y-axis offset from centerline
+
+        Returns:
+            Array of (x, y, z) coordinates for section perimeter
+        """
+        # Hull taper (wider at middle, tapered at ends)
+        if x_ratio < 0.1:
+            # Stern - sharp taper
+            width_factor = x_ratio / 0.1
+        elif x_ratio > 0.9:
+            # Bow - gradual taper
+            width_factor = (1.0 - x_ratio) / 0.1
+        else:
+            # Midship - full width
+            width_factor = 1.0
+
+        width = hull_params.beam * width_factor
+        draft = hull_params.draft if hull_params.draft else hull_params.hull_depth * 0.5
+        deadrise_rad = np.radians(hull_params.deadrise_angle)
+
+        # Generate points around cross-section perimeter
+        points = []
+
+        for i in range(self.points_per_section):
+            # Parameter along perimeter (0 to 1)
+            t = i / self.points_per_section
+
+            if t < 0.25:
+                # Bottom center to starboard (with deadrise)
+                local_t = t / 0.25
+                y_local = local_t * width / 2
+                z = -draft + abs(y_local) * np.tan(deadrise_rad)
+            elif t < 0.5:
+                # Starboard side (vertical)
+                local_t = (t - 0.25) / 0.25
+                y_local = width / 2
+                z = -draft + abs(y_local) * np.tan(deadrise_rad) + local_t * (draft - abs(y_local) * np.tan(deadrise_rad))
+            elif t < 0.75:
+                # Top starboard to port
+                local_t = (t - 0.5) / 0.25
+                y_local = width / 2 * (1 - 2 * local_t)
+                z = 0
+            else:
+                # Port side (vertical down)
+                local_t = (t - 0.75) / 0.25
+                y_local = -width / 2
+                z = -local_t * (draft - abs(y_local) * np.tan(deadrise_rad))
+
+            points.append([x, y_local + y_offset, z])
+
+        return np.array(points)
+
+    def _loft_sections(self, sections: List[np.ndarray]) -> trimesh.Trimesh:
+        """
+        Connect cross-sections into 3D surface mesh.
+
+        Args:
+            sections: List of cross-section point arrays
+
+        Returns:
+            trimesh.Trimesh object
+        """
+        vertices = []
+        faces = []
+
+        # Flatten all section points into vertex list
+        for section in sections:
+            vertices.extend(section)
+
+        vertices = np.array(vertices)
+
+        # Generate triangular faces connecting sections
+        n_pts = self.points_per_section
+
+        for i in range(len(sections) - 1):
+            for j in range(n_pts):
+                # Current section vertex indices
+                v1 = i * n_pts + j
+                v2 = i * n_pts + (j + 1) % n_pts
+
+                # Next section vertex indices
+                v3 = (i + 1) * n_pts + j
+                v4 = (i + 1) * n_pts + (j + 1) % n_pts
+
+                # Two triangles per quad
+                faces.append([v1, v2, v4])
+                faces.append([v1, v4, v3])
+
+        faces = np.array(faces)
+
+        return trimesh.Trimesh(vertices=vertices, faces=faces)
+
+    def _generate_deck_platform(self, hull_params: HullParameters) -> trimesh.Trimesh:
+        """Generate deck connecting the two hulls."""
+        # Simple rectangular platform
+        length = hull_params.length_overall * 0.8  # 80% of hull length
+        width = hull_params.hull_spacing
+        thickness = 0.1
+
+        # Create box mesh
+        deck = trimesh.creation.box(extents=[length, width, thickness])
+
+        # Position at waterline
+        draft = hull_params.draft if hull_params.draft else hull_params.hull_depth * 0.5
+        deck.vertices[:, 2] += (hull_params.freeboard - draft)
+
+        return deck
+
+    def _generate_superstructure(self, hull_params: HullParameters) -> trimesh.Trimesh:
+        """Generate simplified deckhouse/cabin."""
+        # Small box representing cabin
+        cabin_length = hull_params.length_overall * 0.3
+        cabin_width = hull_params.hull_spacing * 0.6
+        cabin_height = 2.0
+
+        cabin = trimesh.creation.box(extents=[cabin_length, cabin_width, cabin_height])
+
+        # Position on deck
+        draft = hull_params.draft if hull_params.draft else hull_params.hull_depth * 0.5
+        cabin.vertices[:, 2] += (hull_params.freeboard - draft + cabin_height/2 + 0.1)
+
+        return cabin
+
+    def export_stl(self, mesh: trimesh.Trimesh, path: str, binary: bool = True):
+        """
+        Export mesh to STL file.
+
+        Args:
+            mesh: Trimesh object to export
+            path: Output file path
+            binary: If True, use binary STL format (more compact)
+        """
+        mesh.export(path, file_type='stl')
+
+    def generate_lod_meshes(self, hull_params: HullParameters) -> Dict[str, trimesh.Trimesh]:
+        """
+        Generate multiple Level-of-Detail versions.
+
+        Returns:
+            {"low": mesh, "medium": mesh, "high": mesh}
+        """
+        # High detail
+        high_gen = HullGenerator(num_cross_sections=50, points_per_section=30)
+        high_data = high_gen.generate(hull_params)
+        high_mesh = high_data['mesh']
+
+        # Medium detail
+        medium_gen = HullGenerator(num_cross_sections=30, points_per_section=20)
+        medium_data = medium_gen.generate(hull_params)
+        medium_mesh = medium_data['mesh']
+
+        # Low detail
+        low_gen = HullGenerator(num_cross_sections=15, points_per_section=10)
+        low_data = low_gen.generate(hull_params)
+        low_mesh = low_data['mesh']
+
+        return {
+            "high": high_mesh,
+            "medium": medium_mesh,
+            "low": low_mesh
+        }
+
+    # ========================================================================
+    # GEOMETRY METADATA CALCULATIONS
+    # ========================================================================
 
     def _calculate_waterline_properties(self, hull_params: HullParameters) -> Dict[str, float]:
         """
@@ -335,23 +593,39 @@ class HullGenerator:
         }
 
 
-def generate_hull_metadata(hull_params: HullParameters) -> Dict[str, Any]:
+def generate_hull_metadata(hull_params: HullParameters, generate_mesh: bool = False) -> Dict[str, Any]:
     """
-    Convenience function to generate hull metadata.
+    Convenience function to generate hull metadata and optionally 3D mesh.
+
+    Args:
+        hull_params: Hull parameters
+        generate_mesh: If True, generate 3D mesh
+
+    Returns:
+        Dictionary of hull geometry metadata (and mesh if requested)
+    """
+    generator = HullGenerator(generate_mesh=generate_mesh)
+    return generator.generate(hull_params)
+
+
+def generate_hull_mesh(hull_params: HullParameters) -> Tuple[trimesh.Trimesh, Dict[str, Any]]:
+    """
+    Convenience function to generate 3D hull mesh.
 
     Args:
         hull_params: Hull parameters
 
     Returns:
-        Dictionary of hull geometry metadata
+        (mesh, metadata) tuple
     """
-    generator = HullGenerator()
-    return generator.generate(hull_params)
+    generator = HullGenerator(generate_mesh=True)
+    data = generator.generate(hull_params)
+    return data['mesh'], data['mesh_metadata']
 
 
 if __name__ == "__main__":
     # Demonstrate hull generator
-    from hull_parameters import get_baseline_catamaran, get_high_speed_catamaran
+    from naval_domain.hull_parameters import get_baseline_catamaran, get_high_speed_catamaran
     import json
 
     print("=" * 70)
