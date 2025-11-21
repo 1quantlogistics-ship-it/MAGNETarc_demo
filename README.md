@@ -1,4 +1,4 @@
-# MAGNET Arc: Autonomous Naval Vessel Design Research
+MAGNET (Multi-Agent Naval Generative Engineering Testbed)
 
 **Version:** 0.2.0 (Production Ready)
 **Status:** Stable
