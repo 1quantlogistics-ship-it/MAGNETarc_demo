@@ -228,7 +228,13 @@ class AutonomousOrchestrator:
     async def _run_architect(self) -> NavalAgentResponse:
         architect = self.agents["architect"]
         best_designs = self.knowledge_base.get_best_designs(n=1)
-        current_best = best_designs[0] if best_designs else None
+
+        # If no best designs yet, use baseline catamaran
+        if best_designs:
+            current_best = best_designs[0]
+        else:
+            from naval_domain.baseline_designs import get_baseline_general
+            current_best = get_baseline_general()
 
         context = {
             "hypothesis": self.state.current_hypothesis,
