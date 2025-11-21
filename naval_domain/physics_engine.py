@@ -21,8 +21,10 @@ References:
 from dataclasses import dataclass, asdict
 from typing import Dict, Any, Optional
 import math
+import time
+from pathlib import Path
 
-from hull_parameters import HullParameters
+from naval_domain.hull_parameters import HullParameters
 
 
 # === PHYSICAL CONSTANTS ===
@@ -78,6 +80,11 @@ class PhysicsResults:
     # === FAILURE FLAGS ===
     is_valid: bool             # Overall validity
     failure_reasons: list      # List of failure reason strings
+
+    # === 3D MESH GENERATION (Task 3.1) ===
+    design_id: Optional[str] = None           # Unique design identifier
+    mesh_path: Optional[str] = None           # Path to STL mesh file
+    mesh_metadata: Optional[Dict[str, Any]] = None  # Mesh statistics (vertices, faces, etc.)
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary format."""
@@ -782,24 +789,64 @@ class PhysicsEngine:
 
 # === CONVENIENCE FUNCTION ===
 
-def simulate_design(hull_params: HullParameters, verbose: bool = False) -> PhysicsResults:
+def simulate_design(hull_params: HullParameters, verbose: bool = False, generate_mesh: bool = True) -> PhysicsResults:
     """
-    Convenience function to simulate a single design.
+    Convenience function to simulate a single design with optional 3D mesh generation.
 
     Args:
         hull_params: Hull parameters to simulate
         verbose: Enable verbose output
+        generate_mesh: If True, generate and save 3D mesh (Task 3.1 integration)
 
     Returns:
-        PhysicsResults: Simulation results
+        PhysicsResults: Simulation results (includes mesh_path and design_id if generated)
     """
     engine = PhysicsEngine(verbose=verbose)
-    return engine.simulate(hull_params)
+    results = engine.simulate(hull_params)
+
+    # Generate 3D mesh if requested (Task 3.1 integration)
+    if generate_mesh:
+        try:
+            from naval_domain.hull_generator import HullGenerator
+
+            # Generate unique design ID (timestamp-based)
+            design_id = f"design_{int(time.time() * 1000)}"
+
+            # Create output directory
+            mesh_dir = Path("outputs/meshes/current")
+            mesh_dir.mkdir(parents=True, exist_ok=True)
+
+            # Generate 3D mesh
+            generator = HullGenerator(num_cross_sections=50, points_per_section=30)
+            mesh_data = generator.generate(hull_params)
+            mesh = mesh_data['mesh']
+            mesh_metadata = mesh_data['mesh_metadata']
+
+            # Save mesh to STL file
+            mesh_path = mesh_dir / f"{design_id}.stl"
+            generator.export_stl(mesh, str(mesh_path))
+
+            if verbose:
+                print(f"  ✓ 3D mesh generated: {mesh_path}")
+                print(f"    Vertices: {mesh_metadata['vertex_count']:,}, Faces: {mesh_metadata['face_count']:,}")
+
+            # Add mesh info to results
+            results.design_id = design_id
+            results.mesh_path = str(mesh_path)
+            results.mesh_metadata = mesh_metadata
+
+        except Exception as e:
+            if verbose:
+                print(f"  ⚠ Warning: Mesh generation failed: {e}")
+            # Don't fail the simulation if mesh generation fails
+            pass
+
+    return results
 
 
 if __name__ == "__main__":
     # Demonstrate physics engine with baseline catamaran
-    from hull_parameters import get_baseline_catamaran, get_high_speed_catamaran
+    from naval_domain.hull_parameters import get_baseline_catamaran, get_high_speed_catamaran
 
     print("=" * 70)
     print("PHYSICS ENGINE DEMONSTRATION")
