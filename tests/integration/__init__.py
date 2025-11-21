@@ -1,1 +1,1 @@
-"""Integration tests for ARC workflows"""
+"""Integration tests for full research cycle."""
