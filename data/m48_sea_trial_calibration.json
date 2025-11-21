@@ -1,0 +1,181 @@
+{
+  "platform": "Magnet Defense M48",
+  "vessel_type": "48-meter twin-hull catamaran",
+  "trial_summary": {
+    "total_distance_nm": 32000,
+    "operational_hours": 2500,
+    "ocean_regions": [
+      "Pacific Ocean",
+      "Caribbean Sea",
+      "US East Coast"
+    ],
+    "trial_period": "2020-2025",
+    "configuration": "Crewed variant with research lab",
+    "purpose": "Performance validation and operational qualification"
+  },
+  "proven_performance_envelope": {
+    "speed": {
+      "max_speed_knots": 30.0,
+      "cruise_speed_knots": 17.5,
+      "economic_speed_knots": 15.0,
+      "speed_at_50_percent_payload_knots": 29.0,
+      "notes": "28-30 knots sustained at 50% max payload (72 tons)"
+    },
+    "range": {
+      "max_range_nm": 15000,
+      "cruise_speed_for_max_range_knots": 17.5,
+      "range_at_20_knots_nm": 13500,
+      "range_at_25_knots_nm": 9000,
+      "notes": "15,000 NM proven at 15-20 knot sustained cruise"
+    },
+    "sea_state_survivability": {
+      "max_sea_state_wmo": 9,
+      "max_wind_speed_knots": 68,
+      "max_wave_height_feet": 40,
+      "max_wave_height_meters": 12.2,
+      "operational_limitations": "None observed in Sea State 9 conditions",
+      "notes": "Exceeded WMO Sea State 9 criteria (winds >68 kts, wave height 40')"
+    },
+    "payload": {
+      "structural_weight_metric_tons": 83.5,
+      "structural_weight_short_tons": 92.0,
+      "typical_payload_tons": 70.0,
+      "max_tested_payload_tons": 72.0,
+      "payload_at_max_speed_tons": 72.0,
+      "notes": "Crewed variant includes crew accommodations, research lab, upper deck superstructure"
+    }
+  },
+  "hull_configuration": {
+    "length_overall_meters": 48.0,
+    "length_overall_feet": 157.5,
+    "beam_per_hull_meters": 2.0,
+    "hull_spacing_meters": 10.0,
+    "hull_depth_meters": 3.2,
+    "draft_operational_meters": 1.6,
+    "displacement_full_load_tons": 165.0,
+    "hull_material": "Marine-grade aluminum",
+    "construction": "Metal Shark Boats, Franklin LA (2020)"
+  },
+  "propulsion_system": {
+    "configuration": "Twin diesel engines, one per hull",
+    "shaft_type": "Straight shaft via gearbox and fixed coupling",
+    "propellers": "5-blade fixed-pitch propellers",
+    "num_engines": 2,
+    "fuel_type": "Marine diesel",
+    "fuel_capacity_liters": 45000,
+    "fuel_capacity_gallons": 11890,
+    "specific_fuel_consumption_kg_per_kwh": 0.22,
+    "notes": "Simple, dual-engine configuration for resilience and minimal maintenance"
+  },
+  "power_generation": {
+    "generators": "2 × 100 kW (240/120V)",
+    "total_power_kw": 200.0,
+    "generator_redundancy": true,
+    "paralleling_capability": true,
+    "diesel_consumption_at_80kw_load_liters_per_day": 1200.0,
+    "notes": "One generator per hull, capable of paralleling for 200 kW total"
+  },
+  "resistance_calibration": {
+    "description": "Empirical corrections to ITTC-1957 theoretical formulas based on 32,000 NM operational data",
+    "friction_correction_factor": 1.05,
+    "friction_correction_notes": "5% increase over ITTC-1957 for operational surface roughness (biofouling, paint degradation)",
+    "catamaran_interference_factor": 1.08,
+    "catamaran_interference_notes": "8% wave interference between twin hulls (validated via speed trials)",
+    "appendage_drag_factor": 1.12,
+    "appendage_drag_notes": "12% appendage resistance (straight shafts, rudders, propellers, bilge keels)",
+    "air_resistance": "Standard calculation (frontal area × Cd × 0.5 × rho × V^2)",
+    "validation_method": "Cross-check power consumption logs vs. GPS speed data across 2,500 operational hours"
+  },
+  "propulsive_efficiency": {
+    "hull_efficiency": 1.02,
+    "propeller_efficiency_at_cruise": 0.68,
+    "propeller_efficiency_at_max_speed": 0.60,
+    "shaft_efficiency": 0.98,
+    "overall_propulsive_efficiency": 0.65,
+    "notes": "Fixed-pitch propellers optimized for cruise speed (17.5 kts)"
+  },
+  "stability_data": {
+    "metacentric_height_gm_meters": 2.1,
+    "metacentric_height_notes": "Estimated from observed roll period in Sea State 9 conditions",
+    "transverse_stability": "Excellent due to wide hull spacing (10m center-to-center)",
+    "roll_period_seconds": 8.5,
+    "pitch_period_seconds": 6.2,
+    "deck_wetness": "Minimal even in Sea State 9 (catamaran tunnel clearance)",
+    "sensor_platform_suitability": "High - low roll/pitch amplitude for tracking systems"
+  },
+  "operational_highlights": {
+    "loitering_missions": "Extended loitering in support of US Government civil agency operations",
+    "autonomous_testing": "L3Harris ASView autonomy stack integrated and validated",
+    "colregs_compliance": "COLREGS-compliant autonomous navigation demonstrated",
+    "extreme_weather_performance": "Operated in winds >68 kts, wave heights 40' (Sea State 9) with no damage or operational limitations",
+    "crew_feedback": "Highly stable platform, comfortable in heavy seas, excellent sea-keeping characteristics"
+  },
+  "unmanned_conversion_projections": {
+    "description": "Performance changes expected for unmanned variant (remove upper 2 decks)",
+    "weight_reduction_tons": 20.0,
+    "weight_reduction_notes": "Remove crew accommodations, research lab, upper deck superstructure",
+    "displacement_unmanned_tons": 145.0,
+    "stability_improvement": "Lower center of gravity → higher GM, improved Sea State performance",
+    "speed_improvement_knots": 1.0,
+    "speed_improvement_notes": "Lighter weight + reduced wind resistance → 1-2 knot speed increase",
+    "range_improvement_percent": 7.0,
+    "range_improvement_notes": "15,000 NM → ~16,000 NM due to weight reduction",
+    "rcs_reduction": "Faceted geometry option for low-observable operations"
+  },
+  "mission_adaptability": {
+    "deck_area_sq_meters": 280.0,
+    "deck_area_sq_feet": 3014.0,
+    "containerized_payload_capacity": "4 × 36-ton standard containers (144 tons threshold)",
+    "mission_modules_tested": [
+      "Research lab equipment",
+      "Communications systems",
+      "Sensor packages"
+    ],
+    "future_mission_modules": [
+      "ISR packages (MUOS antenna, tracking sensors)",
+      "ASW modules (sonar, UUV launch/recovery)",
+      "MCM modules (mine detection, countermeasures)",
+      "Surface warfare (missile tracking, defense sensors)",
+      "Logistics (containerized cargo)"
+    ]
+  },
+  "autonomy_validation": {
+    "autonomy_stack": "L3Harris ASView",
+    "technology_readiness_level": "TRL-9",
+    "previous_deployments": [
+      "Ghost Fleet Overlord (Mariner, Nomad mUSV)",
+      "Medium Unmanned Surface Vessel (MUSV) program",
+      "USNS Apalachicola (T-EPF-13)"
+    ],
+    "autonomous_miles_nm": 30000,
+    "autonomous_operational_days": 4000,
+    "colregs_compliance": true,
+    "umaa_version": "UMAA 4 (upgrading to UMAA 6 by end of year)",
+    "collaborative_autonomy": "AMORPHOUS software (L3Harris)",
+    "eo_ir_recognition": "Automated recognition for EMCON operations",
+    "anti_jam_gps": "Assured PNT in contested environments"
+  },
+  "certification_and_compliance": {
+    "navy_certification": "L3Harris ASView: Navy certified, Authority to Operate",
+    "construction_standards": "Built to commercial standards, upgradeable to Navy specs",
+    "shipyard": "Metal Shark Boats (20+ years, 2000+ vessels delivered)",
+    "quality_assurance": "ISO 9001:2015 certified manufacturing"
+  },
+  "data_quality": {
+    "gps_logging": "Continuous GPS position/speed logging (2,500 hours)",
+    "power_consumption_logging": "Engine power output and fuel consumption logs",
+    "environmental_logging": "Sea state, wind speed, wave height observations",
+    "crew_observations": "Detailed logbook entries for performance events",
+    "validation_method": "Cross-correlation of GPS speed, power logs, and fuel consumption for resistance calibration",
+    "data_confidence": "High - 32,000 NM provides statistically significant sample across diverse conditions"
+  },
+  "notes": [
+    "All performance data derived from actual operational logs (2020-2025)",
+    "32,000 NM represents one of the most extensive sea trial programs for a vessel of this class",
+    "Performance envelope proven across Pacific, Caribbean, and Atlantic ocean conditions",
+    "Sea State 9 survivability validated (winds >68 kts, wave height 40') - exceeds typical catamaran qualifications",
+    "Resistance calibration factors are conservative estimates based on fuel consumption vs. speed correlation",
+    "Unmanned conversion projections are engineering estimates pending actual unmanned variant testing",
+    "All data suitable for NAVSEA HC-MASC technical substantiation and proposal validation"
+  ]
+}

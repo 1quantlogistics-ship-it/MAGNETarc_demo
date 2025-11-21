@@ -75,16 +75,18 @@ class BaseNavalAgent(ABC):
     - autonomous_cycle(): Core agent logic for one research cycle
     """
 
-    def __init__(self, config: NavalAgentConfig, llm_client):
+    def __init__(self, config: NavalAgentConfig, llm_client, m48_mode: bool = False):
         """
         Initialize a naval agent.
 
         Args:
             config: Agent configuration
             llm_client: LLM client instance for generation
+            m48_mode: If True, inject M48 mission context into prompts
         """
         self.config = config
         self.llm = llm_client
+        self.m48_mode = m48_mode
 
         # Extract config fields
         self.agent_id = config.agent_id
@@ -97,6 +99,9 @@ class BaseNavalAgent(ABC):
         self.state = AgentState.INACTIVE
         self.last_activity: Optional[str] = None
         self.current_task: Optional[str] = None
+
+        # M48 context injection
+        self.m48_context_block = self._get_m48_context() if m48_mode else ""
 
         # Performance metrics
         self.metrics = {
@@ -211,6 +216,20 @@ class BaseNavalAgent(ABC):
         log_file = os.path.join(decisions_path, f"{decision_type}.jsonl")
         with open(log_file, 'a') as f:
             f.write(json.dumps(log_entry) + '\n')
+
+    def _get_m48_context(self) -> str:
+        """
+        Get M48 mission context block for prompt injection.
+
+        Returns:
+            Formatted M48 context string for agent prompts
+        """
+        try:
+            from config.m48_config import get_default_m48_config
+            config = get_default_m48_config()
+            return config.get_agent_context_block()
+        except ImportError:
+            return ""
 
     @abstractmethod
     def autonomous_cycle(self, context: Dict[str, Any]) -> NavalAgentResponse:
