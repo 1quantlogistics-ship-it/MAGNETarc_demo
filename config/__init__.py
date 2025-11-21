@@ -1,11 +1,22 @@
 """
-ARC Configuration Package
-=========================
+MAGNET Configuration Package
+=============================
 
-Provides YAML-based configuration loading for agents, models, and consensus.
-Uses config/loader.py for configuration management.
+Provides configuration for MAGNET naval design research system.
 """
 
-from config.loader import ConfigLoader, get_config_loader
+from config.magnet_config import MAGNETSettings, get_default_profile
 
-__all__ = ['ConfigLoader', 'get_config_loader']
+def get_settings() -> MAGNETSettings:
+    """Get current MAGNET settings."""
+    profile = get_default_profile()
+    return profile.settings
+
+# Legacy alias for compatibility
+ARCSettings = MAGNETSettings
+
+def reset_settings_cache():
+    """Reset settings cache (no-op for MAGNET but kept for test compatibility)."""
+    pass
+
+__all__ = ['get_settings', 'MAGNETSettings', 'get_default_profile', 'ARCSettings', 'reset_settings_cache']

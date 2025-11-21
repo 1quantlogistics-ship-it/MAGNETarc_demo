@@ -612,24 +612,32 @@ npm run dev
 - Comprehensive documentation (README.md, INSTALLATION.md)
 
 **Total Code:** ~10,736 lines of production code
+**D4: Autonomous Orchestrator** (Agent 2) ✅
+- Supervisor naval agent (meta-learning) (180 lines)
+- Autonomous orchestrator with 7-step cycle (394 lines)
+- CLI entry point with argument parsing (`run_magnet.py`)
+- State persistence and resume capability
+- **Bug fixes:**
+  - Fixed baseline design NoneType error in first cycle
+  - Fixed data format mismatch between knowledge base and agents
+  - Added experiment history flattening for agent compatibility
+- **Validation:** 5-cycle autonomous run - 40 experiments, 100% valid, best score 77.0
+- Integration tests: 14/17 passing (3 test infrastructure issues)
+
+**Total Code:** ~8,200 lines of production code
 
 ### In Progress
 
-**D4: Autonomous Orchestrator** 🚧
-- Supervisor agent implementation
-- Main orchestration loop (6-step cycle)
-- CLI entry point (`run_magnet.py`)
-- 5-10 cycle validation test
-
-**ETA:** 6-7 hours
-
-### Planned
-
-**D5: v0 Validation & Release**
-- 10-cycle autonomous run on Mac
-- Comprehensive documentation
+**D5: v0 Validation & Release** 🚧
+- Enhanced logging and error reporting
+- Extended validation (10+ cycle run)
+- Comprehensive documentation review
 - Code freeze and merge to main
 - Tag v0.1.0 release
+
+**ETA:** 2-3 hours
+
+### Planned
 
 **D6: GPU Deployment (v1.0)**
 - Deploy to 2x A40 GPU server
