@@ -10,7 +10,7 @@ MAGNET (Multi-Agent Naval Generative Engineering Testbed)
 [![Status](https://img.shields.io/badge/Status-Stable-brightgreen.svg)](https://github.com/1quantlogistics-ship-it/MAGNETarc_demo)
 [![Tests](https://img.shields.io/badge/Tests-39%2F39_Passing-success.svg)](https://github.com/1quantlogistics-ship-it/MAGNETarc_demo)
 
-> **🎉 v0.2.0 Released!** - Complete 3D visualization pipeline, dynamic rendering, synthetic data generation, and critical bug fixes. System ready for production deployment.
+> **🎉 v0.2.0 Released** - Complete 3D visualization pipeline, dynamic rendering, synthetic data generation, and critical bug fixes. System ready for production deployment.
 
 ## Overview
 
@@ -20,12 +20,12 @@ MAGNET Arc is an **autonomous research system** that continuously generates nove
 
 Unlike traditional optimization or scripted demos, MAGNET Arc **thinks like a naval architect**:
 
-- 💡 **Generates its own hypotheses** about hull geometry and performance
-- 🔬 **Designs experiments** to test those hypotheses
-- ⚡ **Runs GPU-accelerated physics simulations** in parallel (1000+ designs/sec)
-- 🧠 **Learns design principles** from both successes and failures
-- 🔄 **Adapts its strategy** through meta-learning
-- 🌊 **Operates autonomously 24/7** without human intervention
+-  **Generates its own hypotheses** about hull geometry and performance
+-  **Designs experiments** to test those hypotheses
+-  **Runs GPU-accelerated physics simulations** in parallel (1000+ designs/sec)
+-  **Learns design principles** from both successes and failures
+-  **Adapts its strategy** through meta-learning
+-  **Operates autonomously 24/7** without human intervention
 
 **Key Innovation:** The system doesn't just execute predefined tasks—it continuously asks "what if?" questions, tests counter-intuitive ideas, and builds knowledge over time.
 
@@ -200,8 +200,6 @@ MAGNET Arc uses **5 specialized LLM-based agents** that collaborate through a de
 
 ### Recommended Setup: 2x NVIDIA A40 (48GB each)
 
-**Total Cost:** ~$12,000 (used) or $450/month cloud
-
 **Model Configuration:**
 - **LLM:** DeepSeek-R1-Distill-Qwen-32B (4-bit quantization)
 - **Memory per agent:** ~20GB VRAM
@@ -315,23 +313,23 @@ Run a quick 5-cycle autonomous research session:
 python run_magnet.py --mode=mock --cycles=5 --device=cpu
 
 # Expected output:
-# 🌊 MAGNET Autonomous Research System
+#  MAGNET Autonomous Research System
 # Mode: mock | Device: cpu
 # Target: 5 cycles
 #
 # Cycle 1/5:
-#   [1/6] 💡 Generating hypothesis...
-#   [2/6] 🔧 Designing experiments...
-#   [3/6] 🛡️  Safety review...
-#   [4/6] ⚡ Running simulations...
-#   [5/6] 📊 Analyzing results...
-#   [6/6] 🧠 Learning and strategy adjustment...
-#   ✅ Cycle 1 complete
+#   [1/6]  Generating hypothesis...
+#   [2/6]  Designing experiments...
+#   [3/6]   Safety review...
+#   [4/6]  Running simulations...
+#   [5/6]  Analyzing results...
+#   [6/6]  Learning and strategy adjustment...
+#    Cycle 1 complete
 #
 # ... (cycles 2-5) ...
 #
-# ✅ 5 cycles complete, 50 designs evaluated
-# 📊 Results saved to results/<timestamp>/
+#  5 cycles complete, 50 designs evaluated
+#  Results saved to results/<timestamp>/
 ```
 
 ### GPU Deployment (2x A40)
@@ -564,21 +562,21 @@ npm run dev
 
 ### Completed Deliverables
 
-**D1: Naval Physics Foundation** (Agent 1) ✅
+**D1: Naval Physics Foundation** (Agent 1) 
 - Hull parameter schema (13 parameters)
 - CPU physics engine (810 lines)
 - GPU-accelerated batch simulation (820 lines)
 - Hull generator with validation (420 lines)
 - 21 passing tests (100% coverage)
 
-**D2: Agent Architecture** (Agent 2) ✅
+**D2: Agent Architecture** (Agent 2) 
 - Base naval agent framework (339 lines)
 - Explorer agent (383 lines)
 - Experimental architect agent (446 lines)
 - LLM client infrastructure (403 lines)
 - 5 passing integration tests
 
-**D3: Integration Infrastructure** (Both Agents) ✅
+**D3: Integration Infrastructure** (Both Agents) 
 - Agent 1:
   - Knowledge base with persistence (560 lines)
   - Baseline catamaran designs library (250 lines)
@@ -593,7 +591,7 @@ npm run dev
 
 **Total Code:** ~7,600 lines of production code
 
-**D4: Autonomous Orchestrator** (Agent 2) ✅
+**D4: Autonomous Orchestrator** (Agent 2) 
 - Supervisor naval agent (meta-learning) (180 lines)
 - Autonomous orchestrator with 7-step cycle (394 lines)
 - CLI entry point with argument parsing (`run_magnet.py`)
@@ -607,7 +605,7 @@ npm run dev
 
 **Total Code:** ~8,200 lines of production code
 
-**D5: 3D Visualization & Data Generation** (Agent 3 & 2) ✅
+**D5: 3D Visualization & Data Generation** (Agent 3 & 2) 
 - Complete 3D mesh generation with Trimesh
 - Physics-informed synthetic data generation system
 - 4 sampling strategies (LHS, Gaussian, Edge, Mixed)
