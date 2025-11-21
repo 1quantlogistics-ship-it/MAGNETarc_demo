@@ -21,6 +21,15 @@ from datetime import datetime
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+# Try to import legacy ARC components if available (for backwards compatibility)
+try:
+    from config import ARCSettings, reset_settings_cache
+    LEGACY_ARC_AVAILABLE = True
+except ImportError:
+    LEGACY_ARC_AVAILABLE = False
+    ARCSettings = None
+    reset_settings_cache = lambda: None
+
 # Import MAGNET configuration (ARCSettings is now an alias for MAGNETSettings)
 from config import ARCSettings, reset_settings_cache
 

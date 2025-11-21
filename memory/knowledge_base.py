@@ -502,6 +502,480 @@ class KnowledgeBase:
         self.statistics = self._init_statistics()
         self.save()
 
+    # ========== Visualization Methods ==========
+
+    def export_html_report(self, output_path: str) -> str:
+        """
+        Generate comprehensive HTML dashboard with embedded visualizations.
+
+        Creates a self-contained HTML file with:
+        - Research statistics summary
+        - Performance over time charts
+        - Pareto frontier visualization
+        - Top 10 designs table
+        - Extracted principles list
+
+        Args:
+            output_path: Path where HTML file should be saved
+
+        Returns:
+            Path to generated HTML file
+
+        Example:
+            >>> kb = KnowledgeBase()
+            >>> # ... add experiments ...
+            >>> kb.export_html_report("results/dashboard.html")
+        """
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+        import base64
+        from io import BytesIO
+
+        # Helper function to convert figure to base64
+        def fig_to_base64(fig):
+            buf = BytesIO()
+            fig.savefig(buf, format='png', dpi=150, bbox_inches='tight')
+            buf.seek(0)
+            img_base64 = base64.b64encode(buf.read()).decode('utf-8')
+            buf.close()
+            plt.close(fig)
+            return img_base64
+
+        # Generate visualizations
+        plots = {}
+
+        # Improvement over time plot
+        if self.experiments:
+            cycles = [exp['cycle'] for exp in self.experiments]
+            avg_scores = [exp.get('avg_score', 0.0) for exp in self.experiments]
+            max_scores = [exp.get('max_score', 0.0) for exp in self.experiments]
+
+            fig, ax = plt.subplots(figsize=(10, 5))
+            ax.plot(cycles, avg_scores, marker='o', linewidth=2, label='Average')
+            ax.plot(cycles, max_scores, marker='^', linewidth=1.5, label='Max', linestyle='--')
+            ax.set_xlabel('Cycle')
+            ax.set_ylabel('Score')
+            ax.set_title('Performance Over Time')
+            ax.legend()
+            ax.grid(True, alpha=0.3)
+            plots['improvement'] = fig_to_base64(fig)
+
+        # Pareto frontier plot
+        if self.best_designs:
+            stability = [d['result']['stability_score'] for d in self.best_designs[:50]]
+            speed = [d['result']['speed_score'] for d in self.best_designs[:50]]
+            overall = [d['overall_score'] for d in self.best_designs[:50]]
+
+            fig, ax = plt.subplots(figsize=(8, 6))
+            scatter = ax.scatter(stability, speed, c=overall, cmap='viridis',
+                               s=100, alpha=0.6, edgecolors='black')
+            ax.set_xlabel('Stability Score')
+            ax.set_ylabel('Speed Score')
+            ax.set_title('Pareto Frontier: Stability vs Speed')
+            plt.colorbar(scatter, ax=ax, label='Overall Score')
+            ax.grid(True, alpha=0.3)
+            plots['pareto'] = fig_to_base64(fig)
+
+        # Build HTML
+        html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MAGNET Research Dashboard</title>
+    <style>
+        body {{
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+        }}
+        .container {{
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+        }}
+        h1 {{
+            color: #667eea;
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 10px;
+        }}
+        h2 {{
+            color: #764ba2;
+            margin-top: 30px;
+        }}
+        .stats-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }}
+        .stat-card {{
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+        }}
+        .stat-value {{
+            font-size: 2em;
+            font-weight: bold;
+            margin: 10px 0;
+        }}
+        .stat-label {{
+            font-size: 0.9em;
+            opacity: 0.9;
+        }}
+        .plot {{
+            margin: 20px 0;
+            text-align: center;
+        }}
+        .plot img {{
+            max-width: 100%;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }}
+        table {{
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }}
+        th, td {{
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }}
+        th {{
+            background: #667eea;
+            color: white;
+        }}
+        tr:hover {{
+            background: #f5f5f5;
+        }}
+        .footer {{
+            margin-top: 40px;
+            text-align: center;
+            color: #999;
+            font-size: 0.9em;
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🌊 MAGNET Autonomous Naval Design Research Dashboard</h1>
+        <p><strong>Generated:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+
+        <h2>📊 Research Statistics</h2>
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">Total Cycles</div>
+                <div class="stat-value">{self.statistics['total_cycles']}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Designs Evaluated</div>
+                <div class="stat-value">{self.statistics['total_designs_evaluated']}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Best Score</div>
+                <div class="stat-value">{self.statistics['best_overall_score']:.1f}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Avg Score</div>
+                <div class="stat-value">{self.statistics['avg_overall_score']:.1f}</div>
+            </div>
+        </div>
+
+        <h2>📈 Performance Over Time</h2>
+        {f'<div class="plot"><img src="data:image/png;base64,{plots["improvement"]}" /></div>' if 'improvement' in plots else '<p>No data available</p>'}
+
+        <h2>🎯 Pareto Frontier</h2>
+        {f'<div class="plot"><img src="data:image/png;base64,{plots["pareto"]}" /></div>' if 'pareto' in plots else '<p>No data available</p>'}
+
+        <h2>🏆 Top 10 Designs</h2>
+        <table>
+            <tr>
+                <th>Rank</th>
+                <th>LOA (m)</th>
+                <th>Spacing (m)</th>
+                <th>Speed (kts)</th>
+                <th>Overall Score</th>
+            </tr>
+"""
+
+        for i, design_data in enumerate(self.best_designs[:10], 1):
+            design = design_data['design']
+            result = design_data['result']
+            html += f"""
+            <tr>
+                <td>{i}</td>
+                <td>{design['length_overall']:.1f}</td>
+                <td>{design['hull_spacing']:.1f}</td>
+                <td>{design['design_speed']:.1f}</td>
+                <td>{result['overall_score']:.1f}</td>
+            </tr>
+"""
+
+        html += f"""
+        </table>
+
+        <h2>💡 Extracted Principles ({len(self.principles)})</h2>
+        <ul>
+"""
+
+        for principle in self.principles[-10:]:
+            html += f"""
+            <li>
+                <strong>{principle.get('parameter', 'Unknown')}:</strong>
+                {principle.get('insight', 'No insight')}
+                (correlation: {principle.get('correlation', 0.0):.3f})
+            </li>
+"""
+
+        html += """
+        </ul>
+
+        <div class="footer">
+            <p>MAGNET Autonomous Research System | Generated by KnowledgeBase</p>
+        </div>
+    </div>
+</body>
+</html>
+"""
+
+        # Save HTML file
+        with open(output_path, 'w') as f:
+            f.write(html)
+
+        return output_path
+
+    def plot_improvement_over_time(self, output_path: str) -> str:
+        """
+        Generate improvement over time plot showing learning progression.
+
+        Creates a line chart showing average, max, and min scores across
+        research cycles, with shaded region between min/max.
+
+        Args:
+            output_path: Path where plot image should be saved
+
+        Returns:
+            Path to generated plot file
+
+        Raises:
+            ValueError: If no experiments available for visualization
+
+        Example:
+            >>> kb = KnowledgeBase()
+            >>> # ... run cycles ...
+            >>> kb.plot_improvement_over_time("results/improvement.png")
+        """
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+
+        if not self.experiments:
+            raise ValueError("No experiments available for visualization")
+
+        # Extract cycle data
+        cycles = []
+        avg_scores = []
+        max_scores = []
+        min_scores = []
+
+        for exp in self.experiments:
+            cycles.append(exp['cycle'])
+            avg_scores.append(exp.get('avg_score', 0.0))
+            max_scores.append(exp.get('max_score', 0.0))
+            min_scores.append(exp.get('min_score', 0.0))
+
+        # Create figure
+        fig, ax = plt.subplots(figsize=(12, 6))
+
+        # Plot lines
+        ax.plot(cycles, avg_scores, marker='o', linewidth=2, label='Average Score',
+               color='blue', markersize=6)
+        ax.plot(cycles, max_scores, marker='^', linewidth=1.5, label='Max Score',
+               color='green', markersize=6, linestyle='--')
+        ax.plot(cycles, min_scores, marker='v', linewidth=1.5, label='Min Score',
+               color='red', markersize=6, linestyle='--')
+
+        # Fill between min and max
+        ax.fill_between(cycles, min_scores, max_scores, alpha=0.2, color='blue')
+
+        ax.set_xlabel('Research Cycle', fontsize=12)
+        ax.set_ylabel('Overall Score', fontsize=12)
+        ax.set_title('Design Performance Improvement Over Time', fontsize=14)
+        ax.legend(loc='best', fontsize=11)
+        ax.grid(True, alpha=0.3)
+
+        # Baseline reference line
+        ax.axhline(y=60.0, color='gray', linestyle=':', linewidth=2, label='Baseline')
+
+        plt.tight_layout()
+        plt.savefig(output_path, dpi=150)
+        plt.close()
+
+        return output_path
+
+    def visualize_design_space_2d(
+        self,
+        output_path: str,
+        param_x: str = 'length_overall',
+        param_y: str = 'hull_spacing'
+    ) -> str:
+        """
+        Generate 2D design space scatter plot.
+
+        Creates a scatter plot showing the relationship between two design
+        parameters, color-coded by overall score.
+
+        Args:
+            output_path: Path where plot should be saved
+            param_x: X-axis parameter name (default: 'length_overall')
+            param_y: Y-axis parameter name (default: 'hull_spacing')
+
+        Returns:
+            Path to generated plot file
+
+        Raises:
+            ValueError: If no designs available or parameters not found
+
+        Example:
+            >>> kb = KnowledgeBase()
+            >>> # ... add experiments ...
+            >>> kb.visualize_design_space_2d("results/design_space.png",
+            ...                               param_x='length_overall',
+            ...                               param_y='beam')
+        """
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+
+        if not self.best_designs:
+            raise ValueError("No designs available for visualization")
+
+        # Extract parameter values and scores
+        x_values = []
+        y_values = []
+        scores = []
+
+        for design_data in self.best_designs:
+            design = design_data['design']
+            if param_x in design and param_y in design:
+                x_values.append(design[param_x])
+                y_values.append(design[param_y])
+                scores.append(design_data['overall_score'])
+
+        if not x_values:
+            raise ValueError(f"Parameters {param_x} and {param_y} not found in designs")
+
+        # Create figure
+        fig, ax = plt.subplots(figsize=(10, 6))
+
+        # Scatter plot with color map
+        scatter = ax.scatter(x_values, y_values, c=scores, cmap='viridis',
+                           s=100, alpha=0.6, edgecolors='black')
+
+        ax.set_xlabel(param_x.replace('_', ' ').title(), fontsize=12)
+        ax.set_ylabel(param_y.replace('_', ' ').title(), fontsize=12)
+        ax.set_title(f'Design Space: {param_x} vs {param_y}', fontsize=14)
+        ax.grid(True, alpha=0.3)
+
+        # Colorbar
+        cbar = plt.colorbar(scatter, ax=ax)
+        cbar.set_label('Overall Score', fontsize=12)
+
+        plt.tight_layout()
+        plt.savefig(output_path, dpi=150)
+        plt.close()
+
+        return output_path
+
+    def visualize_pareto_frontier(self, output_path: str) -> str:
+        """
+        Generate Pareto frontier visualization showing multi-objective trade-offs.
+
+        Creates a 3-panel plot showing trade-offs between:
+        - Stability vs Speed
+        - Stability vs Efficiency
+        - Speed vs Efficiency
+
+        Args:
+            output_path: Path where plot should be saved
+
+        Returns:
+            Path to generated plot file
+
+        Raises:
+            ValueError: If no designs available for visualization
+
+        Example:
+            >>> kb = KnowledgeBase()
+            >>> # ... add experiments ...
+            >>> kb.visualize_pareto_frontier("results/pareto.png")
+        """
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+
+        if not self.best_designs:
+            raise ValueError("No designs available for visualization")
+
+        # Extract scores
+        stability_scores = []
+        speed_scores = []
+        efficiency_scores = []
+        overall_scores = []
+
+        for design_data in self.best_designs:
+            result = design_data['result']
+            stability_scores.append(result['stability_score'])
+            speed_scores.append(result['speed_score'])
+            efficiency_scores.append(result['efficiency_score'])
+            overall_scores.append(result['overall_score'])
+
+        # Create figure with subplots
+        fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+
+        # Stability vs Speed
+        axes[0].scatter(stability_scores, speed_scores, c=overall_scores,
+                       cmap='viridis', s=100, alpha=0.6, edgecolors='black')
+        axes[0].set_xlabel('Stability Score', fontsize=11)
+        axes[0].set_ylabel('Speed Score', fontsize=11)
+        axes[0].set_title('Stability vs Speed', fontsize=12)
+        axes[0].grid(True, alpha=0.3)
+
+        # Stability vs Efficiency
+        axes[1].scatter(stability_scores, efficiency_scores, c=overall_scores,
+                       cmap='viridis', s=100, alpha=0.6, edgecolors='black')
+        axes[1].set_xlabel('Stability Score', fontsize=11)
+        axes[1].set_ylabel('Efficiency Score', fontsize=11)
+        axes[1].set_title('Stability vs Efficiency', fontsize=12)
+        axes[1].grid(True, alpha=0.3)
+
+        # Speed vs Efficiency
+        scatter = axes[2].scatter(speed_scores, efficiency_scores, c=overall_scores,
+                                 cmap='viridis', s=100, alpha=0.6, edgecolors='black')
+        axes[2].set_xlabel('Speed Score', fontsize=11)
+        axes[2].set_ylabel('Efficiency Score', fontsize=11)
+        axes[2].set_title('Speed vs Efficiency', fontsize=12)
+        axes[2].grid(True, alpha=0.3)
+
+        # Colorbar
+        fig.colorbar(scatter, ax=axes, label='Overall Score')
+
+        plt.tight_layout()
+        plt.savefig(output_path, dpi=150)
+        plt.close()
+
+        return output_path
+
 
 if __name__ == "__main__":
     # Demonstration

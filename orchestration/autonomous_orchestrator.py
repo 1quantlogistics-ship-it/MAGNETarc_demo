@@ -209,13 +209,38 @@ class AutonomousOrchestrator:
 
         return cycle_results
 
+    def _flatten_experiments(self, experiments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Flatten knowledge base experiment format into individual experiment records.
+
+        KB stores: {cycle: 1, designs: [...], results: [...]}
+        Explorer expects: [{parameters: {...}, results: {...}}, ...]
+        """
+        flattened = []
+        for exp_cycle in experiments:
+            designs = exp_cycle.get("designs", [])
+            results = exp_cycle.get("results", [])
+
+            # Match designs with results (should be same length)
+            for i, design in enumerate(designs):
+                if i < len(results):
+                    flattened.append({
+                        "parameters": design.get("parameters", {}),
+                        "results": results[i].get("results", {})
+                    })
+
+        return flattened
+
     async def _run_explorer(self) -> NavalAgentResponse:
         explorer = self.agents["explorer"]
         kb_context = self.knowledge_base.get_context_for_explorer()
 
+        # Flatten experiment history for explorer
+        flattened_experiments = self._flatten_experiments(self.knowledge_base.experiments)
+
         context = {
             "knowledge_base": kb_context,
-            "experiment_history": self.knowledge_base.experiments,
+            "experiment_history": flattened_experiments,
             "current_best": self.knowledge_base.get_best_designs(n=1)[0] if self.knowledge_base.get_best_designs(n=1) else {},
             "cycle_number": self.state.cycle_number,
             "exploration_strategy": self.state.exploration_strategy
@@ -228,7 +253,13 @@ class AutonomousOrchestrator:
     async def _run_architect(self) -> NavalAgentResponse:
         architect = self.agents["architect"]
         best_designs = self.knowledge_base.get_best_designs(n=1)
-        current_best = best_designs[0] if best_designs else None
+
+        # If no best designs yet, use baseline catamaran
+        if best_designs:
+            current_best = best_designs[0]
+        else:
+            from naval_domain.baseline_designs import get_baseline_general
+            current_best = get_baseline_general()
 
         context = {
             "hypothesis": self.state.current_hypothesis,
@@ -243,10 +274,13 @@ class AutonomousOrchestrator:
     async def _run_critic_pre(self) -> NavalAgentResponse:
         critic = self.agents["critic"]
 
+        # Flatten experiment history for critic
+        flattened_experiments = self._flatten_experiments(self.knowledge_base.experiments)
+
         context = {
             "designs": self.state.current_designs,
             "hypothesis": self.state.current_hypothesis,
-            "experiment_history": self.knowledge_base.experiments
+            "experiment_history": flattened_experiments
         }
 
         response = critic.autonomous_cycle(context)
@@ -263,10 +297,13 @@ class AutonomousOrchestrator:
     async def _run_critic_post(self) -> NavalAgentResponse:
         critic = self.agents["critic"]
 
+        # Flatten experiment history for critic
+        flattened_experiments = self._flatten_experiments(self.knowledge_base.experiments)
+
         context = {
             "experiment_results": self.state.current_results,
             "hypothesis": self.state.current_hypothesis,
-            "experiment_history": self.knowledge_base.experiments
+            "experiment_history": flattened_experiments
         }
 
         response = critic.autonomous_cycle(context)
@@ -277,9 +314,12 @@ class AutonomousOrchestrator:
     async def _run_historian(self) -> NavalAgentResponse:
         historian = self.agents["historian"]
 
+        # Flatten experiment history for historian
+        flattened_experiments = self._flatten_experiments(self.knowledge_base.experiments)
+
         context = {
             "new_results": self.state.current_results,
-            "current_history": {"experiments": self.knowledge_base.experiments},
+            "current_history": {"experiments": flattened_experiments},
             "knowledge_base": {},
             "cycle_number": self.state.cycle_number
         }
@@ -292,8 +332,11 @@ class AutonomousOrchestrator:
     async def _run_supervisor(self) -> NavalAgentResponse:
         supervisor = self.agents["supervisor"]
 
+        # Flatten experiment history for supervisor
+        flattened_experiments = self._flatten_experiments(self.knowledge_base.experiments)
+
         context = {
-            "experiment_history": self.knowledge_base.experiments,
+            "experiment_history": flattened_experiments,
             "knowledge_base": self.knowledge_base.get_statistics(),
             "cycle_number": self.state.cycle_number,
             "current_best_score": self.state.best_overall_score
