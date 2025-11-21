@@ -22,7 +22,7 @@ from dataclasses import dataclass, asdict
 from typing import Dict, Any, Optional
 import math
 
-from hull_parameters import HullParameters
+from naval_domain.hull_parameters import HullParameters
 
 
 # === PHYSICAL CONSTANTS ===

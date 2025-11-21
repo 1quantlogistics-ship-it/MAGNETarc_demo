@@ -1,18 +1,19 @@
 """
-ARC Phase D: Multi-Agent Infrastructure
-========================================
+MAGNET Naval Agent Infrastructure
+==================================
 
-This package contains the multi-agent architecture for ARC v1.1.0+.
-Supports heterogeneous models, democratic voting, and supervisor validation.
+This package contains the naval-specialized agents for MAGNET autonomous design.
 
-Key Components:
-- BaseAgent: Abstract base class for all agents
-- AgentRegistry: Registration and discovery system
-- Communication protocol for inter-agent messaging
+Naval Agents:
+- BaseNavalAgent: Abstract base class for all naval agents
+- ExplorerAgent: Design space exploration
+- ExperimentalArchitectAgent: Novel hull generation
+- CriticNavalAgent: Safety validation
+- HistorianNavalAgent: Knowledge base curation
+- SupervisorNavalAgent: Meta-learning and coordination
 """
 
-from agents.base import BaseAgent, AgentState, AgentCapability
-from agents.registry import AgentRegistry
+from agents.base_naval_agent import BaseNavalAgent, NavalAgentConfig, NavalAgentResponse
 
-__version__ = "1.1.0-alpha"
-__all__ = ["BaseAgent", "AgentState", "AgentCapability", "AgentRegistry"]
+__version__ = "0.1.0"
+__all__ = ["BaseNavalAgent", "NavalAgentConfig", "NavalAgentResponse"]

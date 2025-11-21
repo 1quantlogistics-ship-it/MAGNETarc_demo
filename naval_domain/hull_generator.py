@@ -15,7 +15,7 @@ Future enhancements could include:
 from typing import Dict, Any, List, Tuple
 import math
 
-from hull_parameters import HullParameters
+from naval_domain.hull_parameters import HullParameters
 
 
 class HullGenerator:

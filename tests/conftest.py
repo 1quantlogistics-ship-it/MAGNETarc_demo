@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Generator, Dict, Any
 from datetime import datetime
 
-# Import ARC modules
+# Import configuration modules
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -30,6 +30,11 @@ except ImportError:
     ARCSettings = None
     reset_settings_cache = lambda: None
 
+# Import MAGNET configuration (ARCSettings is now an alias for MAGNETSettings)
+from config import ARCSettings, reset_settings_cache
+
+# Legacy ARC schemas - these fixtures are no longer used by MAGNET tests
+# but kept for backwards compatibility. Naval tests don't require these.
 try:
     from schemas import (
         Directive, DirectiveMode, Objective, NoveltyBudget,
@@ -42,6 +47,7 @@ try:
     )
     LEGACY_SCHEMAS_AVAILABLE = True
 except ImportError:
+    # Legacy schemas not available - MAGNET naval tests don't need them
     LEGACY_SCHEMAS_AVAILABLE = False
 
 
@@ -116,8 +122,10 @@ def test_settings(temp_arc_home: Path) -> Generator[ARCSettings, None, None]:
 # ============================================================================
 
 @pytest.fixture
-def default_directive() -> Directive:
+def default_directive():
     """Create a valid default directive."""
+    if not LEGACY_SCHEMAS_AVAILABLE:
+        pytest.skip("Legacy schemas not available")
     return Directive(
         cycle_id=1,
         mode=DirectiveMode.EXPLORE,
@@ -132,8 +140,10 @@ def default_directive() -> Directive:
 
 
 @pytest.fixture
-def default_history_summary() -> HistorySummary:
+def default_history_summary():
     """Create a valid default history summary."""
+    if not LEGACY_SCHEMAS_AVAILABLE:
+        pytest.skip("Legacy schemas not available")
     return HistorySummary(
         total_cycles=5,
         total_experiments=15,
@@ -176,8 +186,10 @@ def default_history_summary() -> HistorySummary:
 
 
 @pytest.fixture
-def default_constraints() -> Constraints:
+def default_constraints():
     """Create valid default constraints."""
+    if not LEGACY_SCHEMAS_AVAILABLE:
+        pytest.skip("Legacy schemas not available")
     return Constraints(
         forbidden_ranges=[
             ForbiddenRange(
@@ -197,8 +209,10 @@ def default_constraints() -> Constraints:
 
 
 @pytest.fixture
-def default_system_state() -> SystemState:
+def default_system_state():
     """Create valid default system state."""
+    if not LEGACY_SCHEMAS_AVAILABLE:
+        pytest.skip("Legacy schemas not available")
     return SystemState(
         mode=OperatingMode.SEMI,
         arc_version="1.1.0",
@@ -212,8 +226,10 @@ def default_system_state() -> SystemState:
 
 
 @pytest.fixture
-def default_proposals() -> Proposals:
+def default_proposals():
     """Create valid default proposals."""
+    if not LEGACY_SCHEMAS_AVAILABLE:
+        pytest.skip("Legacy schemas not available")
     return Proposals(
         cycle_id=6,
         proposals=[
@@ -241,8 +257,10 @@ def default_proposals() -> Proposals:
 
 
 @pytest.fixture
-def default_reviews() -> Reviews:
+def default_reviews():
     """Create valid default reviews."""
+    if not LEGACY_SCHEMAS_AVAILABLE:
+        pytest.skip("Legacy schemas not available")
     return Reviews(
         cycle_id=6,
         reviews=[
@@ -273,15 +291,17 @@ def default_reviews() -> Reviews:
 # ============================================================================
 
 @pytest.fixture
-def memory_files(test_settings: ARCSettings, default_directive: Directive,
-                default_history_summary: HistorySummary, default_constraints: Constraints,
-                default_system_state: SystemState) -> Dict[str, Path]:
+def memory_files(test_settings, default_directive,
+                default_history_summary, default_constraints,
+                default_system_state):
     """
     Create all memory files on disk with valid defaults.
 
     Returns:
         Dictionary mapping memory file type to file path
     """
+    if not LEGACY_SCHEMAS_AVAILABLE:
+        pytest.skip("Legacy schemas not available")
     from schemas import save_memory_file
 
     memory_dir = test_settings.memory_dir
