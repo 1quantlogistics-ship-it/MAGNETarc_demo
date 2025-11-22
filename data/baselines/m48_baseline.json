@@ -1,0 +1,100 @@
+{
+  "vessel_name": "M48 Patrol Boat - Unmanned Baseline",
+  "vessel_type": "patrol_vessel",
+  "data_source": "Magnet Defense M48 32,000 NM Sea Trials",
+  "captured_date": "2025-11-22",
+  "confidence": 0.98,
+  "principal_dimensions": {
+    "LOA_m": 48.0,
+    "LWL_m": 46.5,
+    "Beam_m": 2.0,
+    "Draft_m": 1.5,
+    "Depth_m": 3.0,
+    "Hull_Spacing_m": 10.0,
+    "Hull_Type": "twin_hull_catamaran"
+  },
+  "hydrostatics": {
+    "displacement_tonnes": 145.0,
+    "LCB_m": 23.52,
+    "LCF_m": 23.87,
+    "KB_m": 0.81,
+    "BM_m": 5.8,
+    "GM_m": 2.1,
+    "waterplane_area_m2": 410.0,
+    "wetted_surface_m2": 385.0,
+    "Cb": 0.43,
+    "Cp": 0.64,
+    "Cm": 0.67,
+    "Cwp": 0.88,
+    "deadrise_angle_deg": 11.0,
+    "freeboard_m": 1.8,
+    "lcb_position_percent": 49.0
+  },
+  "performance": {
+    "max_speed_knots": 30.0,
+    "cruise_speed_knots": 17.5,
+    "design_speed_knots": 28.0,
+    "economic_speed_knots": 15.0,
+    "range_nm": 16000.0,
+    "fuel_capacity_liters": 45000.0,
+    "fuel_capacity_gallons": 11890.0,
+    "specific_fuel_consumption_kg_per_kwh": 0.22
+  },
+  "resistance_calibration": {
+    "friction_correction_factor": 1.05,
+    "catamaran_interference_factor": 1.08,
+    "appendage_drag_factor": 1.12,
+    "hull_efficiency": 1.02,
+    "propeller_efficiency_cruise": 0.68,
+    "propeller_efficiency_max": 0.60,
+    "shaft_efficiency": 0.98,
+    "overall_propulsive_efficiency": 0.65
+  },
+  "propulsion": {
+    "configuration": "twin_diesel_straight_shaft",
+    "num_engines": 2,
+    "propeller_type": "5_blade_fixed_pitch",
+    "shaft_type": "straight_shaft_gearbox"
+  },
+  "stability": {
+    "metacentric_height_gm_meters": 2.1,
+    "roll_period_seconds": 8.5,
+    "pitch_period_seconds": 6.2,
+    "max_sea_state_wmo": 9,
+    "max_wind_speed_knots": 68,
+    "max_wave_height_meters": 12.2
+  },
+  "payload": {
+    "structural_weight_tonnes": 83.5,
+    "payload_capacity_tonnes": 60.0,
+    "mission_modules": ["ISR", "COMMUNICATIONS"],
+    "deck_area_sq_meters": 280.0
+  },
+  "autonomy": {
+    "autonomy_stack": "L3Harris ASView",
+    "technology_readiness_level": "TRL-9",
+    "colregs_compliance": true,
+    "autonomous_miles_nm": 30000,
+    "autonomous_operational_days": 4000
+  },
+  "validation": {
+    "sea_trial_distance_nm": 32000,
+    "operational_hours": 2500,
+    "ocean_regions": ["Pacific Ocean", "Caribbean Sea", "US East Coast"],
+    "trial_period": "2020-2025",
+    "data_quality": "High - validated via GPS, power logs, fuel consumption"
+  },
+  "construction": {
+    "hull_material": "Marine-grade aluminum",
+    "shipyard": "Metal Shark Boats, Franklin LA",
+    "construction_year": 2020,
+    "construction_standards": "Commercial upgradeable to Navy specs"
+  },
+  "geometry_metadata": {
+    "faceted_geometry": true,
+    "superstructure_removed": true,
+    "rcs_reduction": true,
+    "unmanned_conversion": true,
+    "weight_reduction_from_crewed_tonnes": 20.0
+  }
+}
