@@ -58,6 +58,66 @@ services:
       - control-plane
     command: ["streamlit", "run", "api/dashboard.py", "--server.port=8501", "--server.address=0.0.0.0"]
 
+  # PostgreSQL + pgvector for design storage and embeddings
+  postgres:
+    image: postgres:16-alpine
+    container_name: magnet-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: magnet
+      POSTGRES_USER: magnet_user
+      POSTGRES_PASSWORD: magnet_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U magnet_user -d magnet"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for message queue and agent communication
+  redis:
+    image: redis:7-alpine
+    container_name: magnet-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Neo4j for knowledge graph
+  neo4j:
+    image: neo4j:5.15-community
+    container_name: magnet-neo4j
+    restart: unless-stopped
+    environment:
+      NEO4J_AUTH: neo4j/magnet_dev_password
+      NEO4J_PLUGINS: '["apoc"]'
+    ports:
+      - "7474:7474"  # HTTP
+      - "7687:7687"  # Bolt
+    volumes:
+      - neo4j_data:/data
+    healthcheck:
+      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "magnet_dev_password", "RETURN 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+volumes:
+  postgres_data:
+  redis_data:
+  neo4j_data:
+
 networks:
   default:
     name: arc-network
